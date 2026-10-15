@@ -9,16 +9,18 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from .aba_aplicacoes_ebg import AbaAplicacoesEBG
 from .aba_carga import AbaCarga
 from .aba_celula import AbaCelula
 from .aba_ebg import AbaEBG
 from .aba_exportar import AbaExportar
+from .aba_floquet import AbaFloquet
 from .aba_substrato import AbaSubstrato
 from .comum import PASTA_SAIDAS, RAIZ, Estado
 
 # (nome do grupo no menu, [ferramentas])
 GRUPOS = [
-    ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG]),
+    ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]
@@ -26,7 +28,7 @@ GERAIS = [AbaSubstrato, AbaExportar]
 # lista plana mantida para scripts e testes (ordem de criação)
 ABAS = [AbaSubstrato] + [c for _, cs in GRUPOS for c in cs] + [AbaExportar]
 
-VERSAO = "1.2"
+VERSAO = "1.3"
 
 
 class Aplicacao:

@@ -246,6 +246,75 @@ class PerdasDispersao(unittest.TestCase):
         np.testing.assert_allclose(tau, 0.05 * np.sqrt(ee) / ms.C0, rtol=1e-6)
 
 
+class Floquet(unittest.TestCase):
+    def test_linha_uniforme_fig_2_1(self):
+        # perturbação infinitesimal: β estendido é a reta k0·√εeff e os harmônicos, retas deslocadas
+        from lta.core import floquet as fl
+        w = sintese(50, RO3010)
+        z0, ee = (float(x) for x in analise(w, RO3010))
+        l = 0.01
+        f = np.linspace(1e8, 25e9, 1500)
+        al, bl = abcd.dispersao(abcd.linha(z0, 2 * np.pi * f * np.sqrt(ee) / ms.C0 * l))
+        ext = fl.desdobrar(bl)
+        # atol: arccosh perde precisão perto de βl = mπ (cos βl = ±1)
+        np.testing.assert_allclose(ext, 2 * np.pi * f * np.sqrt(ee) / ms.C0 * l, atol=1e-2)
+        h = {x.n: x for x in fl.harmonicos(f, ext, l, 1)}
+        f_ini, f_fim, t_ini, _ = fl.faixas_radiacao(f, h[-1])[0]
+        self.assertAlmostEqual(f_ini / fl.inicio_radiacao(l, ee), 1, delta=0.01)
+        self.assertAlmostEqual(t_ini, 180, delta=10)            # começa em backfire
+        i = np.argmin(abs(f - fl.frequencia_broadside(l, ee)))
+        self.assertAlmostEqual(h[-1].theta_graus[i], 90, delta=1)   # eq. 2.11 com βn = 0
+        self.assertFalse(h[0].rapido.any())                     # fundamental é onda lenta
+
+    def test_ebg_desdobrado_com_perdas(self):
+        from lta.core import floquet as fl
+        p = cm.perfil("Senoidal", 64.0, 0.01, 1)
+        f = np.linspace(1e8, 25e9, 1500)
+        z0, ee, al = cm.parametros_linha(f, p, RO3010, perdas=True, dispersivo=True)
+        _, bl = abcd.dispersao(cm.abcd_perfil(f, p.z, z0, ee, al))
+        ext = fl.desdobrar(bl)
+        self.assertTrue(np.all(np.diff(ext) >= -1e-3))
+        i = np.argmin(abs(f - 5.66e9))                          # 1ª banda: βl = π
+        self.assertAlmostEqual(ext[i] / np.pi, 1.0, delta=0.02)
+
+
+class AplicacoesEBG(unittest.TestCase):
+    def test_cdl_exemplo_livro(self):
+        # livro, p. 101: f0 = 9 GHz, Δf = 12 GHz, ψ = -0,5 ns/GHz -> l0 = 6,4 mm, L = 50·l0, C = -2080 1/m²
+        from lta.core import aplicacoes_ebg as ap
+        p = ap.projeto_cdl(9e9, 12e9, -0.5e-18, RO3010, n_periodos=50)
+        self.assertAlmostEqual(p.l0 * 1e3, 6.4, delta=0.05)
+        self.assertAlmostEqual(p.chirp / -2080, 1, delta=0.03)
+        self.assertAlmostEqual(p.f_local(0) / 1e9, 9.0, places=6)
+        self.assertAlmostEqual((p.f_local(-p.comprimento / 2) - p.f_local(p.comprimento / 2)) / 1e9, 12, places=6)
+        perf = ap.perfil_cdl(p)
+        self.assertAlmostEqual(perf.z0[0], 50, places=6)
+        self.assertAlmostEqual(perf.z0[-1], 50, places=6)
+        f = np.linspace(2e9, 16e9, 1200)
+        _, ee = cm.larguras(perf, RO3010)
+        s11, _ = cm.resolver_cmt(f, perf.z, perf.z0, ee)
+        psi, _ = ap.inclinacao_atraso(f, abcd.atraso_grupo(f, s11), 4.2e9, 13.8e9)
+        self.assertAlmostEqual(psi / p.psi, 1, delta=0.1)
+
+    def test_cavidade_exemplo_livro(self):
+        # livro, p. 93: φref1 = φref2 = -95,84° em 4,2 GHz -> βLm = 84,15° com n = -1
+        from lta.core import aplicacoes_ebg as ap
+        lm, n = ap.comprimento_cavidade(np.radians(-95.84), np.radians(-95.84), 1.0)
+        self.assertEqual(n, -1)
+        self.assertAlmostEqual(np.degrees(lm), 84.15, delta=0.02)
+
+    def test_ressonador_em_f0(self):
+        from lta.core import aplicacoes_ebg as ap
+        r = ap.projeto_ressonador(4.2e9, 64.0, 3, RO3010)
+        f = np.linspace(4.1e9, 4.3e9, 2001)
+        _, ee = cm.larguras(r.perfil, RO3010)
+        _, s21 = cm.resolver_cmt(f, r.perfil.z, r.perfil.z0, ee)
+        fp, il, ql, _ = ap.fator_q(f, s21)
+        self.assertAlmostEqual(fp / 4.2e9, 1, delta=1e-3)
+        self.assertLess(il, 0.01)
+        self.assertGreater(ql, 100)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)

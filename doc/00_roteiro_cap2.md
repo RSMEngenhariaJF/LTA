@@ -19,3 +19,19 @@ Fonte: F. Martín, *Artificial Transmission Lines for RF and Microwave Applicati
 | 2.4.6 | Exemplos: K(z) senoidal e quadrado | (2.100)–(2.105) | Reproduzir Figs. 2.11 e 2.14 (RO3010, l = 1 cm, 10 células) |
 | 2.5.1 | Aplicações EBG | (2.106)–(2.115) | Refletores, ressonador de Bragg, filtro "wiggly-line", linha de atraso chirpada (CDL) |
 | 2.5.2 | Linhas com carga capacitiva (slow-wave) | (2.116)–(2.126) | Dispersão distribuída vs. concentrada; projeto de C, L, C_ls a partir de f_c, Z_B, f_s; reproduzir Fig. 2.29 |
+
+## Situação da implementação (v1.3)
+
+| Seção | Situação |
+|---|---|
+| 1.4 (perdas) | Implementado: αd (1.68), αc (1.90 e Pucel), pelicular, rugosidade; dispersão Kirschning-Jansen |
+| 2.2 | Implementado: aba Floquet (zona estendida, harmônicos, leaky-wave, vp e vg) |
+| 2.3.1–2.3.5 | Implementado: aba Célula ABCD; Fig. 2.8 em escala linear |
+| 2.4.1–2.4.6 | Implementado: aba EBG (CMT numérico, analítico, Fourier, perfil personalizado) |
+| 2.5.1.1 | Parcial: refletores de largura modulada; furos no terra só geometria e Bragg |
+| 2.5.1.2 | Implementado: ressonador de Bragg (eq. 2.106, Q) |
+| 2.5.1.3 | Pendente: wiggly-line (exige modelo de linhas acopladas) |
+| 2.5.1.4 | Coberto pelo perfil personalizado (EBG multibanda) |
+| 2.5.1.5 | Implementado: CDL (eqs. 2.109–2.115) |
+| 2.5.2 | Implementado: aba Carga capacitiva |
+

@@ -33,7 +33,8 @@ def main():
     raiz.geometry(f"{int(1400 * escala)}x{int(800 * escala)}+20+10")
     raiz.attributes("-topmost", True)
     aplic = app.Aplicacao(raiz)
-    sub, cel, car, ebg, exp = (aplic.ferramenta(c) for c in app.ABAS)
+    sub, cel, car, ebg, exp = (aplic.ferramenta(c) for c in (app.AbaSubstrato, app.AbaCelula, app.AbaCarga,
+                                                               app.AbaEBG, app.AbaExportar))
 
     class _Nav:  # mantém a sintaxe nb.select(ferramenta) usada abaixo
         @staticmethod

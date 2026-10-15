@@ -40,6 +40,8 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **Célula ABCD** | Dispersão (βl, αl), impedância de Bloch e S de N células para topologias T, Π, L. O ramo série é Ls+Cs e o paralelo é Cp‖Lp, o que cobre linhas RH, LH e CRLH | 2.3 (eqs. 2.21, 2.26, 2.40) |
 | **Carga capacitiva** | Projeto de linha slow-wave: (fc, ZB, fs) ou (fase em f0, ZB, fs) → L, C, Cls → geometria microstrip com patches; atraso de grupo e atenuação por célula | 2.5.2 (eqs. 2.116–2.126) |
 | **EBG / Modos acoplados** | Perfil Z0(z) senoidal ou quadrado → W(z) → S por CMT numérico, cascata ABCD e solução analítica; furos no plano de terra (geometria e Bragg); atraso de grupo | 2.4 e 2.5.1 (eqs. 2.48–2.105) |
+| **Floquet / harmônicos espaciais** | Célula EBG (senoidal/quadrada), linha com carga capacitiva ou linha uniforme → βl desdobrado na zona estendida, harmônicos βn, região de onda rápida, ângulo do feixe leaky-wave, vp,n e vg | 2.2 (eqs. 2.6–2.11) |
+| **Aplicações EBG (CDL, ressonador)** | Linha de atraso chirpada: (f0, Δf, ψ) → l0, C, L → perfil Z0(z) → S11 e atraso de grupo. Ressonador de Bragg: dois refletores senoidais + cavidade Lm (eq. 2.106) → pico, QL e Q0 | 2.5.1 (eqs. 2.106, 2.109–2.115; 1.74–1.75) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -53,6 +55,45 @@ Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **E
 - **Banda útil:** as abas Célula, Carga capacitiva e EBG informam as faixas em que |S11| ≤ −15 dB e |S21| ≥ −1 dB. Os critérios são editáveis na aba Célula.
 - **Regra prática para escadas LC:** S11 ≤ −15 dB, para qualquer número de células, é garantido até f ≈ 0,55·fc (fc ≥ 1,8·fmax).
 - **EBG:** multiplicar K(z) por `janela(z)` ou `hann(z)` no perfil personalizado reduz a ondulação e amplia a faixa útil abaixo da banda rejeitada. No exemplo do livro, ela passa de 2,36 para 3,68 GHz.
+
+### Floquet e radiação leaky-wave
+
+Aba **Floquet / harmônicos espaciais** ([floquet.py](../lta/core/floquet.py)).
+
+- O βl da eq. 2.21 está na zona reduzida [0, π]. A ferramenta o **desdobra** na zona estendida: escolhe, entre 2πk ± βl, o valor contínuo e não decrescente. Isso funciona com perdas e com bandas rejeitadas mais estreitas que o passo de frequência. Vale para estruturas de mão direita; linhas LH/CRLH (cap. 3) precisarão de outro critério.
+- **Gráficos:**
+  - Diagrama de Floquet em zona estendida (Fig. 2.2), com βn·l = βl + 2πn (eq. 2.6), os ramos simétricos (pontilhados) e a região de onda rápida |βn| < k0 sombreada. Os trechos que radiam ficam destacados.
+  - Atenuação por célula e βl estendido.
+  - Ângulo do feixe pela eq. 2.11 (cos θ = βn/k0, θ a partir do eixo da linha; 90° = broadside).
+  - vp,n/c (eq. 2.8) e vg/c (eq. 2.7).
+- **Texto:** bandas rejeitadas, Bragg (eq. 2.9), estimativas de início de radiação e broadside do harmônico n = −1, e faixas de radiação de cada harmônico (para trás, βn < 0, espectral; para a frente, βn > 0, não espectral; eq. 2.13).
+- A radiação **não** entra em α. A ferramenta indica onde ela ocorre, mas não quanto se perde.
+- **Exemplos:** EBG da Fig. 2.11; linha uniforme (Fig. 2.1: retas deslocadas de 2π/l); linha com carga capacitiva.
+
+### Aplicações EBG: CDL e ressonador de Bragg
+
+Aba **Aplicações EBG** ([aplicacoes_ebg.py](../lta/core/aplicacoes_ebg.py)).
+
+- **Linha de atraso chirpada (CDL), seção 2.5.1.5:**
+  - **Entradas:** f0, Δf e ψ (inclinação do atraso de grupo, em ns/GHz). O sinal de ψ define o do chirp: ψ < 0 reflete primeiro as frequências altas, que são as mais atenuadas.
+  - **Projeto:** l0, C e L pelas eqs. 2.115. L é arredondado para N·l0, para que as portas fiquem em Zref, e C é recalculado pela eq. 2.112 para manter Δf. Também se pode fixar N, como no livro (N = 50).
+  - **Perfil:** Z0(z) = Zref·exp(A·W(z)·sin(2πz/l0 + Cz² − CL²/4)) (eq. 2.109). Janela gaussiana assimétrica do livro, W = exp(−4((z − L/4)/L)²), Hamming ou nenhuma.
+  - **Resultados:** perfil, frequência refletida em cada posição (eq. 2.111), |S11| e |S21|, atraso de grupo de S11 com a reta de projeto e ajuste linear do ψ simulado.
+  - **Exemplo do livro (Fig. 2.26):** l0 = 6,39 mm (livro 6,4), C = −2052 m⁻² (livro −2080), ψ simulado sem perdas −0,48 ns/GHz (projeto −0,46). Com perdas, a perda de reflexão média é ≈ 3,4 dB (livro: ≈ 3 dB).
+  - Com dispersão ligada, a banda real se comprime e ψ muda (≈ +19% no exemplo), porque as eqs. 2.111–2.115 supõem εeff fixo.
+- **Ressonador de Bragg, seção 2.5.1.2:**
+  - **Estrutura:** dois refletores senoidais de largura modulada, sintonizados em f0, separados por uma cavidade uniforme de comprimento Lm.
+  - **Projeto:** as fases φref1 (S22 do refletor 1) e φref2 (S11 do refletor 2) vêm do CMT em f0. Lm vem da eq. 2.106, φ1 + φ2 − 2βLm = 2πn, com o n que dá o menor Lm positivo.
+  - **Resultados:** pico de |S21|, perda de inserção, QL = f0/BW−3dB (eq. 1.75) e Q0 = QL/(1 − 10^(−IL/20)) (eq. 1.74).
+  - **Exemplo (Fig. 2.21, 4,2 GHz em RO3010):** pico exatamente em f0 e QL = 132 com perdas. O livro mede Q = 129,2, mas com refletores de furos no terra, que não têm modelo de circuito aqui.
+- Os dois casos exportam o layout (largura modulada) e o Touchstone.
+- **Filtro wiggly-line (seção 2.5.1.3):** não implementado. Ele exige um modelo de linhas acopladas, que o programa ainda não tem.
+
+### Escala linear e Fig. 2.8 (aba Célula ABCD)
+
+- O campo **Escala de |S|** alterna entre dB e linear.
+- O botão **Exemplo Fig. 2.8** reproduz a figura do livro: 20 células T contra L, L = 2,5 nH, C = 1 pF, em escala linear.
+- Quando se comparam células T e L de linha convencional, o texto informa ω0 = 2/√(LC) e o limite de equivalência ω ≪ ω0/2 (eqs. 2.35–2.37).
 
 ### Perdas e dispersão (modelo físico da linha)
 
@@ -138,6 +179,11 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | f_max (eq. 2.84) | 5,66 GHz | 5,74 GHz (\*) |
 | Centro da banda, Fig. 2.11, CMT com dispersão | 5,66 GHz | 5,64 GHz |
 | Profundidade pelicular do cobre, 1 e 10 GHz (nota 24, cap. 1) | 2,06 / 0,66 µm | 2,09 / 0,66 µm |
+| CDL (p. 101): l0, C com L = 50·l0 | 6,4 mm, −2080 m⁻² | 6,39 mm, −2052 m⁻² |
+| CDL: inclinação do atraso de grupo (CMT sem perdas) | −0,5 ns/GHz (−0,46 com L = 50·l0) | −0,48 ns/GHz |
+| Ressonador (p. 93): βLm para φref = −95,84° | 84,15°, n = −1 | 84,16°, n = −1 |
+| Ressonador projetado: pico de \|S21\| | f0 | f0 (erro < 0,1%) |
+| Floquet, linha uniforme: início da radiação (n = −1) e broadside | c/(l(√εeff+1)), c/(l√εeff) | idem (θ = 90° ± 1°) |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -168,7 +214,8 @@ Dependências extras: `python-docx`, `latex2mathml`, `Pillow`, `pymupdf` (opcion
 linhas_periodicas/
 ├── main.py, executar.bat, requirements.txt
 ├── lta/
-│   ├── core/          cálculos (sem GUI): microstrip, abcd, carga_capacitiva, modos_acoplados
+│   ├── core/          cálculos (sem GUI): microstrip, abcd, carga_capacitiva, modos_acoplados,
+│   │                  perfil_personalizado, floquet, aplicacoes_ebg
 │   ├── geometria/     Layout (polígonos em mm) e construtores por tipo de estrutura
 │   ├── exportacao/    formatos_2d (DXF, Gerber, KiCad, GDS), simuladores (HFSS, CST, Touchstone, CSV)
 │   └── gui/           app.py (lista ABAS) + uma aba por arquivo

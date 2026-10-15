@@ -24,6 +24,7 @@ class AbaCelula(AbaBase):
             ("fmin", "f mín", 0.01, "GHz"),
             ("fmax", "f máx", 8.0, "GHz"),
             ("npts", "Pontos", 1001, ""),
+            ("escala", "Escala de |S|", ("dB", "Linear"), ""),
             ("s11max", "Banda útil: |S11| ≤", -15.0, "dB"),
             ("s21min", "Banda útil: |S21| ≥", -1.0, "dB"),
         ], titulo="Célula unitária (0 = elemento ausente)")
@@ -65,8 +66,9 @@ class AbaCelula(AbaBase):
             self.previa.mostrar_erro(str(e))
 
     def exemplo(self):
+        """Fig. 2.8: 20 células T contra L, L = 2,5 nH, C = 1 pF, |S| em escala linear."""
         self.form.set(dict(topologia="T", comparar="L", ls=2.5, cs=0, lp=0, cp=1.0, n=20, zp=50,
-                           fmin=0.01, fmax=8, npts=1001))
+                           fmin=0.01, fmax=8, npts=1001, escala="Linear"))
         self.calcular()
 
     def exemplo_trelica(self):
@@ -92,6 +94,7 @@ class AbaCelula(AbaBase):
         tops = [v["topologia"]] + ([v["comparar"]] if v["comparar"] not in ("Nenhuma", v["topologia"]) else [])
 
         ax = self.grafico.eixos(2, 2)
+        linear = v["escala"] == "Linear"
         texto = []
         for i, top in enumerate(tops):
             m = abcd.celula(f, top, **el)
@@ -103,8 +106,9 @@ class AbaCelula(AbaBase):
             ax[0].plot(al / np.pi, f / 1e9, ls, color=f"C{i}", alpha=0.4, label=f"{top}: αl")
             ax[1].plot(f / 1e9, zb.real, ls, color=f"C{i}", label=f"{top}: Re ZB")
             ax[1].plot(f / 1e9, zb.imag, ls, color=f"C{i}", alpha=0.5, label=f"{top}: Im ZB")
-            ax[2].plot(f / 1e9, abcd.db(s[:, 1, 0]), ls, color=f"C{i}", label=f"{top}: S21")
-            ax[3].plot(f / 1e9, abcd.db(s[:, 0, 0]), ls, color=f"C{i}", label=f"{top}: S11")
+            conv = np.abs if linear else abcd.db
+            ax[2].plot(f / 1e9, conv(s[:, 1, 0]), ls, color=f"C{i}", label=f"{top}: S21")
+            ax[3].plot(f / 1e9, conv(s[:, 0, 0]), ls, color=f"C{i}", label=f"{top}: S11")
             if i == 0:
                 self._ultimo = (f, s, v["zp"], top, v)
             passa = al < 1e-6
@@ -123,16 +127,25 @@ class AbaCelula(AbaBase):
         ax[0].set_title("Diagrama de dispersão", fontsize=9)
         ax[1].set_ylabel("ZB [Ω]")
         ax[1].set_title("Impedância de Bloch", fontsize=9)
-        ax[2].set_ylabel("|S21| [dB]")
+        ax[2].set_ylabel("|S21|" if linear else "|S21| [dB]")
         ax[2].set_title(f"{v['n']} células, portas {v['zp']:g} Ω", fontsize=9)
-        ax[3].set_ylabel("|S11| [dB]")
+        ax[3].set_ylabel("|S11|" if linear else "|S11| [dB]")
         for a in ax:
             a.grid(True, alpha=0.3)
             a.legend(fontsize=7)
         for a in ax[1:]:
             a.set_xlabel("f [GHz]")
-        ax[2].set_ylim(bottom=max(ax[2].get_ylim()[0], -80))
-        ax[3].set_ylim(bottom=max(ax[3].get_ylim()[0], -60))
+        if linear:
+            ax[2].set_ylim(0, 1.05)
+            ax[3].set_ylim(0, 1.05)
+        else:
+            ax[2].set_ylim(bottom=max(ax[2].get_ylim()[0], -80))
+            ax[3].set_ylim(bottom=max(ax[3].get_ylim()[0], -60))
+        if set(tops) == {"T", "L"} and el["ls"] and el["cp"] and not (el["cs"] or el["lp"]):
+            w0 = 2 / np.sqrt(el["ls"] * el["cp"])
+            texto.append(f"\nT × L (eqs. 2.35-2.37): ω0 = 2/√(LC) → f0 = {w0 / (2 * np.pi) / 1e9:.3f} GHz.\n"
+                         f"  As duas células equivalem enquanto ω << ω0/2,\n"
+                         f"  isto é, f << {w0 / (4 * np.pi) / 1e9:.3f} GHz (Im ZB da célula L = ωL/2).")
         self.grafico.desenhar()
         self.ver_resultados()
         self.saida.escrever("\n".join(texto))

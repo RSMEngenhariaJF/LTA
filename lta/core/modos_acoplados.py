@@ -126,8 +126,8 @@ def resolver_cmt(f, z, z0, eeff, alfa=None):
     return s11, s21
 
 
-def resolver_abcd(f, z, z0, eeff, z_ref=50.0, alfa=None):
-    """Verificação independente: cascata de trechos uniformes curtos (θ = (β - jα)·dz)."""
+def abcd_perfil(f, z, z0, eeff, alfa=None):
+    """Matriz ABCD (Nf, 2, 2) do perfil: cascata de trechos uniformes curtos (θ = (β - jα)·dz)."""
     f = np.asarray(f, dtype=float)
     if alfa is None:
         alfa = np.zeros(np.shape(eeff)[-1])
@@ -140,7 +140,12 @@ def resolver_abcd(f, z, z0, eeff, z_ref=50.0, alfa=None):
     for i, dzi in enumerate(dz):
         theta = (2 * np.pi * f * np.sqrt(ee_m[:, i]) / C0 - 1j * al_m[:, i]) * dzi
         t = t @ abcd.linha(zm[:, i], theta)
-    s = abcd.abcd_para_s(t, z_ref)
+    return t
+
+
+def resolver_abcd(f, z, z0, eeff, z_ref=50.0, alfa=None):
+    """Verificação independente do CMT: S da cascata de trechos uniformes curtos."""
+    s = abcd.abcd_para_s(abcd_perfil(f, z, z0, eeff, alfa), z_ref)
     return s[:, 0, 0], s[:, 1, 0]
 
 
