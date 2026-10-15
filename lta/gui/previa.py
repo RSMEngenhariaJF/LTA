@@ -6,6 +6,7 @@ from tkinter import ttk
 import numpy as np
 from matplotlib.patches import Circle, Polygon, Rectangle
 
+from ..geometria.layout import intervalos_em_x
 from .comum import Grafico
 
 COR_COBRE = "#d98c1f"
@@ -44,6 +45,11 @@ def _copper(ax, layout, ref=False):
             ax.add_patch(Circle((cx, cy), r, fill=False, ec=COR_REF, ls=":", lw=1.0, zorder=5))
         else:
             ax.add_patch(Circle((cx, cy), r, fc="white", ec=COR_FURO, ls="--", lw=1, zorder=2))
+    for p in layout.fendas_terra:
+        if ref:
+            ax.add_patch(Polygon(p, closed=True, fill=False, ec=COR_REF, ls=":", lw=1.0, zorder=5))
+        else:
+            ax.add_patch(Polygon(p, closed=True, fc="#dbe8f7", ec=COR_FURO, ls="--", lw=0.8, zorder=4, alpha=0.8))
 
 
 def _mesmo_tipo(ref, atual):
@@ -199,7 +205,7 @@ class PreviaEstrutura(ttk.Frame):
         ax.set_xlim(xr[0] - 0.02 * (xr[1] - xr[0]), xr[1] + 0.09 * (xr[1] - xr[0]))
         ax.set_ylim(yr[0] - 0.25 * (yr[1] - yr[0]), yr[1] + 0.12 * (yr[1] - yr[0]))
         ax.set_aspect("equal", adjustable="datalim")
-        ax.set_title("Vista superior (cobre do topo; furos do terra tracejados)", fontsize=9)
+        ax.set_title("Vista superior (cobre do topo; furos e fendas do terra tracejados)", fontsize=9)
         ax.set_xlabel("x [mm]", fontsize=8)
         ax.tick_params(labelsize=7)
 
@@ -233,6 +239,10 @@ class PreviaEstrutura(ttk.Frame):
             sel = (xs >= xa) & (xs <= xb)
             ys += list(ws[sel] / 2) + list(-ws[sel] / 2)
         ys += [cy + s * r for cx, cy, r in lay.furos_terra if xa - r <= cx <= xb + r for s in (-1, 1)]
+        for p in lay.fendas_terra:
+            p = np.asarray(p)
+            if p[:, 0].max() >= xa and p[:, 0].min() <= xb:
+                ys += [p[:, 1].min(), p[:, 1].max()]
         ys += [c[1] for c in lay.cotas] + [c[3] for c in lay.cotas]
         ya, yb = min(ys), max(ys)
         pad = 0.25 * max(yb - ya, 1e-3)
@@ -243,8 +253,12 @@ class PreviaEstrutura(ttk.Frame):
         # posição do corte: furo da célula, ou onde a largura mais difere da porta
         x_corte = (c0 + c1) / 2
         furos = [cx for cx, _, _ in lay.furos_terra if c0 <= cx <= c1]
+        fendas = [float(np.mean(np.asarray(p)[:, 0])) for p in lay.fendas_terra
+                  if c0 <= np.mean(np.asarray(p)[:, 0]) <= c1]
         if furos:
             x_corte = furos[0]
+        elif fendas:
+            x_corte = fendas[0]
         elif lay.perfil is not None:
             xx = np.linspace(c0, c1, 400)
             wp = lay.portas[0].largura
@@ -268,6 +282,7 @@ class PreviaEstrutura(ttk.Frame):
         # terra com eventual abertura do furo neste x
         aberturas = [(cy - np.sqrt(r**2 - (x - cx) ** 2), cy + np.sqrt(r**2 - (x - cx) ** 2))
                      for cx, cy, r in lay.furos_terra if abs(x - cx) < r]
+        aberturas += [iv for p in lay.fendas_terra for iv in intervalos_em_x(p, x)]
         limites = [y0] + [v for a in sorted(aberturas) for v in a] + [y1]
         for a, b in zip(limites[::2], limites[1::2]):
             ax.add_patch(Rectangle((a, -t_vis), b - a, t_vis, fc=COR_COBRE, ec=COR_BORDA, lw=0.5))
@@ -277,8 +292,8 @@ class PreviaEstrutura(ttk.Frame):
         _desenhar_cota(ax, (y1 * 0.92, 0, y1 * 0.92, h, f"h = {h:g}"))
         ax.text(y0 + 0.03 * (y1 - y0), h / 2, f"εr = {s.er:g}", fontsize=8, va="center")
         for a, b in aberturas:
-            ax.annotate("furo", ((a + b) / 2, -t_vis), xytext=(0, -10), textcoords="offset points",
-                        fontsize=7, ha="center", color=COR_FURO)
+            ax.annotate("fenda" if lay.fendas_terra else "furo", ((a + b) / 2, -t_vis), xytext=(0, -10),
+                        textcoords="offset points", fontsize=7, ha="center", color=COR_FURO)
         ax.set_xlim(y0, y1)
         ax.set_ylim(-0.6 * h, 1.9 * h)
         ax.set_title(f"Corte A (x = {x:.2f} mm), cobre fora de escala", fontsize=9)

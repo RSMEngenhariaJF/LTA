@@ -75,8 +75,8 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
     a(f'    "XSize:=", "{_fmt(x1 - x0)}mm", "YSize:=", "{_fmt(y1 - y0)}mm", "ZSize:=", "h_sub+h_ar"],')
     a('    attr("Ar", "vacuum", "(128 255 255)", 0.9))')
     a("")
-    a("def poligono(nome, pts):")
-    a('    p = [["NAME:PLPoint", "X:=", "%.6fmm" % x, "Y:=", "%.6fmm" % y, "Z:=", "h_sub"] for x, y in pts]')
+    a('def poligono(nome, pts, z="h_sub"):')
+    a('    p = [["NAME:PLPoint", "X:=", "%.6fmm" % x, "Y:=", "%.6fmm" % y, "Z:=", z] for x, y in pts]')
     a("    p.append(p[0])")
     a('    seg = [["NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", i, "NoOfPoints:=", 2]')
     a("           for i in range(len(pts))]")
@@ -96,7 +96,7 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
     a(f'    "XStart:=", "{_fmt(x0)}mm", "YStart:=", "{_fmt(y0)}mm", "ZStart:=", "0mm",')
     a(f'    "Width:=", "{_fmt(x1 - x0)}mm", "Height:=", "{_fmt(y1 - y0)}mm", "WhichAxis:=", "Z"],')
     a('    attr("Terra", "vacuum", "(255 200 100)"))')
-    if layout.furos_terra:
+    if layout.furos_terra or layout.fendas_terra:
         furos = []
         for i, (cx, cy, r) in enumerate(layout.furos_terra):
             nm = f"Furo{i + 1}"
@@ -105,6 +105,11 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
             a(f'    "XCenter:=", "{_fmt(cx)}mm", "YCenter:=", "{_fmt(cy)}mm", "ZCenter:=", "0mm",')
             a(f'    "Radius:=", "{_fmt(r)}mm", "WhichAxis:=", "Z", "NumSegments:=", "0"],')
             a(f'    attr("{nm}", "vacuum", "(0 0 255)"))')
+        for i, p in enumerate(layout.fendas_terra):
+            nm = f"Fenda{i + 1}"
+            furos.append(nm)
+            pts = ", ".join(f"({x:.6f}, {y:.6f})" for x, y in p)
+            a(f'poligono("{nm}", [{pts}], "0mm")')
         a(f'oEditor.Subtract(["NAME:Selections", "Blank Parts:=", "Terra", "Tool Parts:=", "{",".join(furos)}"],')
         a('    ["NAME:SubtractParameters", "KeepOriginals:=", False])')
     a("")
@@ -231,6 +236,25 @@ def cst(layout, caminho, f_min_ghz, f_max_ghz):
         a(f'    .Curve "curvas:contorno{i}"')
         a("    .Create")
         a("End With")
+    if layout.fendas_terra:
+        a("' Fendas no terra (ex.: CSRR): curvas em z = -t extrudadas com t e subtraídas")
+        a('WCS.SetOrigin "0", "0", "-t"')
+        for i, p in enumerate(layout.fendas_terra, start=1):
+            a("With Polygon")
+            a(f'    .Reset : .Name "fenda{i}" : .Curve "curvas"')
+            a(f"    .Point {p[0][0]:.6f}, {p[0][1]:.6f}")
+            for x, y in p[1:]:
+                a(f"    .LineTo {x:.6f}, {y:.6f}")
+            a(f"    .LineTo {p[0][0]:.6f}, {p[0][1]:.6f}")
+            a("    .Create")
+            a("End With")
+            a("With ExtrudeCurve")
+            a(f'    .Reset : .Name "Fenda{i}" : .Component "lta" : .Material "PEC"')
+            a('    .Thickness "t" : .Twistangle "0" : .Taperangle "0" : .DeleteProfile "True"')
+            a(f'    .Curve "curvas:fenda{i}"')
+            a("    .Create")
+            a("End With")
+            a(f'Solid.Subtract "lta:Terra", "lta:Fenda{i}"')
     a('WCS.ActivateWCS "global"')
     a("")
     a("With Background")

@@ -46,6 +46,8 @@ def dxf(layout, caminho):
         linhas += poli(p, "TOPO_COBRE")
     linhas += poli(_retangulo(*layout.terra), "TERRA")
     linhas += poli(_retangulo(*layout.placa), "PLACA")
+    for p in layout.fendas_terra:
+        linhas += poli(p, "TERRA_FUROS")
     for cx, cy, r in layout.furos_terra:
         linhas += ["0", "CIRCLE", "8", "TERRA_FUROS", "10", f"{cx:.6f}", "20", f"{cy:.6f}",
                    "30", "0.0", "40", f"{r:.6f}"]
@@ -91,11 +93,13 @@ def gerber(layout, caminho_base):
     ap = {d: 10 + i for i, d in enumerate(diams)}
     terra += [f"%ADD{ap[d]}C,{d:.6f}*%" for d in diams]
     terra += _gerber_regiao(_retangulo(*layout.terra))
-    if layout.furos_terra:
-        # polaridade "clear": os círculos removem cobre do plano de terra
+    if layout.furos_terra or layout.fendas_terra:
+        # polaridade "clear": círculos e fendas removem cobre do plano de terra
         terra.append("%LPC*%")
         for cx, cy, r in layout.furos_terra:
             terra += [f"D{ap[round(2 * r, 6)]}*", f"X{_gcoord(cx)}Y{_gcoord(cy)}D03*"]
+        for p in layout.fendas_terra:
+            terra += _gerber_regiao(p)
     terra.append("M02*")
     arqs.append(base.parent / f"{base.name}_terra.gbl")
     arqs[-1].write_text("\n".join(terra) + "\n", encoding="ascii")
@@ -167,13 +171,13 @@ def kicad(layout, caminho):
              " (fill yes (thermal_gap 0.508) (thermal_bridge_width 0.508))"
              f" (polygon {_kpts(_retangulo(*layout.terra))}))")
     # Furos no terra: áreas de exclusão de preenchimento
-    for cx, cy, r in layout.furos_terra:
+    for pts in [_circulo(cx, cy, r) for cx, cy, r in layout.furos_terra] + list(layout.fendas_terra):
         s.append(f'  (zone (net 0) (net_name "") (layer "B.Cu") (tstamp {uuid.uuid4()}) (hatch edge 0.508)'
                  " (connect_pads (clearance 0)) (min_thickness 0.1) (filled_areas_thickness no)"
                  " (keepout (tracks allowed) (vias allowed) (pads allowed) (copperpour not_allowed)"
                  " (footprints allowed))"
                  " (fill (thermal_gap 0.508) (thermal_bridge_width 0.508))"
-                 f" (polygon {_kpts(_circulo(cx, cy, r))}))")
+                 f" (polygon {_kpts(pts)}))")
     s.append(")")
     caminho.write_text("\n".join(s) + "\n", encoding="utf-8")
     return [caminho]
@@ -238,6 +242,8 @@ def gds(layout, caminho, nome_celula=None):
     out += boundary(_retangulo(*layout.placa), CAMADAS_GDS["PLACA"])
     for cx, cy, r in layout.furos_terra:
         out += boundary(_circulo(cx, cy, r), CAMADAS_GDS["TERRA_FUROS"])
+    for p in layout.fendas_terra:
+        out += boundary(np.asarray(p), CAMADAS_GDS["TERRA_FUROS"])
     out += _rec(0x0700) + _rec(0x0400)
     caminho.write_bytes(bytes(out))
     return [caminho]

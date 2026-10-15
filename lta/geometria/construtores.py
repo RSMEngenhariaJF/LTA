@@ -105,3 +105,59 @@ def linha_furos_terra(periodo, raio, n_furos, z_ref, sub: Substrato, l_alim=5.0,
     if n_furos > 1:
         lay.cotas.append(_cota_h(c0, c0 + periodo, raio * 1.25, f"l = {periodo:.3f}"))
     return lay
+
+
+def _ret(x0, y0, x1, y1):
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=float)
+
+
+def linha_csrr(n_celulas, periodo, w_linha, geo, sub: Substrato, serie="Gap simples", gap=0.2,
+               n_dedos=6, comp_dedo=1.0, larg_dedo=0.1, l_alim=5.0, nome="linha_csrr", info=None):
+    """Microstrip com elemento série (gap ou interdigital) e CSRR no terra no centro de cada célula.
+
+    geo: GeometriaCSRR (lta.core.csrr). Fig. 3.37 / 3.42 do livro (CSRR + gap / interdigital).
+    """
+    from ..core.csrr import fendas_csrr
+    if periodo < 2 * geo.r_ext:
+        raise ValueError(f"Período ({periodo:.3f} mm) menor que o diâmetro do CSRR ({2 * geo.r_ext:.3f} mm): "
+                         "os anéis de células vizinhas se sobrepõem.")
+    comp = 2 * l_alim + n_celulas * periodo
+    topo, fendas, x_esq = [], [], 0.0
+    if serie == "Interdigital":
+        if n_dedos < 2:
+            raise ValueError("Use ao menos 2 dedos.")
+        larg_tot = (2 * n_dedos - 1) * larg_dedo
+        extensao = comp_dedo + larg_dedo + 2 * larg_dedo      # dedos + folga nas pontas + duas barras
+    else:
+        extensao = gap
+    if extensao >= periodo:
+        raise ValueError("O elemento série não cabe no período.")
+    for i in range(n_celulas):
+        xc = l_alim + (i + 0.5) * periodo
+        fendas += fendas_csrr(xc, 0.0, geo)
+        xa, xb = xc - extensao / 2, xc + extensao / 2
+        topo.append(_ret(x_esq, -w_linha / 2, xa, w_linha / 2))
+        if serie == "Interdigital":
+            y0 = -larg_tot / 2
+            topo.append(_ret(xa, y0, xa + larg_dedo, -y0))                 # barra esquerda
+            topo.append(_ret(xb - larg_dedo, y0, xb, -y0))                 # barra direita
+            for k in range(n_dedos):
+                ya = y0 + 2 * k * larg_dedo
+                if k % 2 == 0:
+                    topo.append(_ret(xa + larg_dedo, ya, xa + larg_dedo + comp_dedo, ya + larg_dedo))
+                else:
+                    topo.append(_ret(xb - larg_dedo - comp_dedo, ya, xb - larg_dedo, ya + larg_dedo))
+        x_esq = xb
+    topo.append(_ret(x_esq, -w_linha / 2, comp, w_linha / 2))
+    meia = max(margem_lateral(sub, w_linha), geo.r_ext + 2 * sub.h_mm)
+    portas = [Porta(0.0, 0.0, w_linha, "xmin"), Porta(comp, 0.0, w_linha, "xmax")]
+    lay = Layout(nome, sub, topo, (0.0, -meia, comp, meia), portas=portas, info=info or {},
+                 perfil=(np.array([0.0, comp]), np.array([w_linha, w_linha])), fendas_terra=fendas)
+    xc = l_alim + 0.5 * periodo
+    lay.celula = (l_alim, l_alim + periodo)
+    lay.cotas = [_cota_h(l_alim, l_alim + periodo, geo.r_ext * 1.15, f"l = {periodo:.3f}"),
+                 _cota_v(l_alim + 0.06 * periodo, w_linha, f"W = {w_linha:.3f}"),
+                 _cota_v(xc + 0.0, 2 * geo.r_ext, f"2·rext = {2 * geo.r_ext:.3f}"),
+                 _cota_h(xc - extensao / 2, xc + extensao / 2, -geo.r_ext * 1.1,
+                         f"{'gap' if serie != 'Interdigital' else 'interdigital'} = {extensao:.3f}")]
+    return lay

@@ -142,12 +142,15 @@ class Medida:
     cos_bl: np.ndarray = field(init=False)
 
     def __post_init__(self):
+        ok = np.all(np.isfinite(self.s.reshape(len(self.f), -1)), axis=1)
+        self.f, self.s = self.f[ok], self.s[ok]          # descarta pontos singulares
         s11 = self.s[:, 0, 0]
         self.zin = self.z0 * (1 + s11) / (1 - s11)
         m = abcd.s_para_abcd(self.s, self.z0)
         a, b, c = 0.5 * (m[:, 0, 0] + m[:, 1, 1]), m[:, 0, 1], m[:, 1, 0]
         self.cos_bl = a
         with np.errstate(all="ignore"):
+            self.zb = np.sqrt(b / c + 0j)                  # ZB da célula simétrica
             # equivalentes da célula simétrica: T (braço = (A-1)/C, Yp = C) e π (Zs = B, Y = (A-1)/B)
             self.t_braco, self.t_yp = (a - 1) / c, c
             self.pi_zs, self.pi_y = b, (a - 1) / b
@@ -171,8 +174,16 @@ class Medida:
         return _unir(_cruzamentos(self.f, (self.z0 / self.zin).real - 1),
                      _zeros(self.f, (self.t_braco if topo == "T" else self.pi_zs).imag))
 
-    def zero_transmissao(self):
-        return _minimo(self.f, 20 * np.log10(np.abs(self.s[:, 1, 0]) + 1e-15))
+    def zeros_transmissao(self, max_n=3):
+        """Mínimos locais internos de |S21| (notches), do mais profundo ao mais raso.
+
+        Os extremos da faixa ficam de fora: com capacitor série, |S21| → 0 em DC sem
+        que haja zero de transmissão.
+        """
+        y = 20 * np.log10(np.abs(self.s[:, 1, 0]) + 1e-15)
+        idx = [i for i in range(1, len(y) - 1) if y[i] < y[i - 1] and y[i] <= y[i + 1]]
+        idx = sorted(idx, key=lambda i: y[i])[:max_n]
+        return [_minimo(self.f[i - 1:i + 2], y[i - 1:i + 2]) for i in idx]
 
     def bl_pi2(self):
         """Frequências com βl = ±π/2 (cos βl = 0) na banda passante."""
@@ -189,9 +200,14 @@ def _csrr(m: Medida, fq, gap):
     cond = {"fz [GHz] (mín. |S21|)": fz / 1e9, "fo [GHz] (r = 1)": fo / 1e9, "χ(fo) [Ω]": chi}
     if gap:
         ws = 2 * np.pi * fq["fs"]
-        if abs(ws / wo - 1) < 0.02:
-            raise ValueError("fs ≈ fo: χ(fo) não determina L.")
-        L = chi / (wo - ws**2 / wo)                       # χ = ωo·L - 1/(ωo·Cg), ωs² = 1/(L·Cg)
+        if abs(ws / wo - 1) > 0.05:
+            L = chi / (wo - ws**2 / wo)                   # χ = ωo·L - 1/(ωo·Cg), ωs² = 1/(L·Cg)
+        else:
+            # quase balanceada: χ(fo) ≈ 0 não determina L. Em βl = ±π/2, A = 0 => Zp = -braço
+            # e ZB² = braço·Zp = X², logo ZB(ω1) = |X do braço| = L·|ω1 - ωs²/ω1|/2.
+            zb1 = abs(m.em(f1, m.zb).real)
+            L = 2 * zb1 / abs(w1 - ws**2 / w1)
+            cond["ZB(f1) [Ω] (balanceada)"] = zb1
         cg = 1 / (ws**2 * L)
         cond["fs [GHz] (g = 1)"] = fq["fs"] / 1e9
     else:
@@ -270,7 +286,7 @@ FREQUENCIAS = {"fz": "zero de transmissão (mín. |S21|)", "fo": "ramo em deriva
 
 def _candidatas(m: Medida, chave, topo, max_n=10):
     if chave == "fz":
-        c = [m.zero_transmissao()]
+        c = m.zeros_transmissao()
     elif chave in ("fo", "fp"):
         c = m.derivacao_abre(topo)
     elif chave == "fs":
@@ -316,6 +332,8 @@ def extrair(nome_modelo, f, s, z0=50.0, manual=None):
         if not all(np.isfinite(v) and v > 0 for v in p.values()):
             continue
         err = erro_rms(nome_modelo, p, m.f, m.s, z0)
+        if not np.isfinite(err):
+            continue
         if melhor is None or err < melhor[2]:
             melhor = (p, cond, err)
     if melhor is None:
@@ -330,9 +348,11 @@ def s_modelo(nome_modelo, p, f, z0=50.0):
 
 def erro_rms(nome_modelo, p, f, s, z0=50.0):
     """Erro rms |S_modelo - S_dados| (S11 e S21), adimensional."""
-    sm = s_modelo(nome_modelo, p, f, z0)
+    with np.errstate(all="ignore"):
+        sm = s_modelo(nome_modelo, p, f, z0)
     d = np.concatenate([sm[:, 0, 0] - s[:, 0, 0], sm[:, 1, 0] - s[:, 1, 0]])
-    return float(np.sqrt(np.mean(np.abs(d) ** 2)))
+    d = d[np.isfinite(d)]
+    return float(np.sqrt(np.mean(np.abs(d) ** 2))) if d.size else np.inf
 
 
 # ---------------------------------------------------------------------------

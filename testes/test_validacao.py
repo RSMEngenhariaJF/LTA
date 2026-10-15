@@ -423,6 +423,49 @@ class Extracao(unittest.TestCase):
         self.assertTrue(np.isinf(lp_))
 
 
+class LinhaCSRR(unittest.TestCase):
+    def test_eqs_3_86_a_3_92(self):
+        from lta.core import csrr as cs
+        c = cs.CircuitoCSRR(5.78e-9, 0.31e-12, 6.43e-12, 1.49e-9, 3.10e-12)     # Tabela 3.3, com gap
+        f = np.linspace(0.3e9, 6e9, 3000)
+        zbn, _ = abcd.impedancia_bloch(c.abcd(f))
+        zba = c.zb(f)
+        ok = np.abs(zbn) < 1e4
+        np.testing.assert_allclose(np.abs(zba[ok]), np.abs(zbn[ok]), rtol=1e-8)        # eq. 3.90
+        s21 = abcd.abcd_para_s(c.abcd(f), 50)[:, 1, 0]
+        self.assertAlmostEqual(f[np.argmin(abs(s21))] / c.fz, 1, delta=0.003)          # eq. 3.86
+        cs_, cpar = c.modelo_melhorado()
+        self.assertAlmostEqual((2 * cs_ + cpar) / c.Cg, 1, places=9)                   # eq. 3.87
+        self.assertAlmostEqual(cpar * (2 * cs_ + cpar) / cs_ / c.C, 1, places=9)       # eq. 3.88
+
+    def test_projeto_balanceado(self):
+        from lta.core import csrr as cs
+        c = cs.projeto_balanceado(2e9, 50, 1.4e9, 3.5e-9)
+        self.assertTrue(c.balanceada)                                                  # eq. 3.91
+        self.assertAlmostEqual(c.fz / 1e9, 1.4, places=6)
+        self.assertAlmostEqual(abs(c.zb(np.array([2e9 * 1.0001]))[0]), 50, delta=0.05)   # eq. 3.92
+        from lta.core import extracao as ex                                            # projeto -> extração
+        f = np.linspace(0.5e9, 4e9, 1501)
+        q, _, err = ex.extrair("CSRR + gap (microstrip)", f, ex.s_modelo("CSRR + gap (microstrip)", c.params(), f))
+        for k, v in c.params().items():
+            self.assertAlmostEqual(q[k] / v, 1, delta=0.01, msg=k)
+
+    def test_estimativa_geometrica_fig_3_39(self):
+        # CSRR da Fig. 3.39 (c = 0,365, d = 0,24, rext = 3,661 mm): fo extraído ≈ 2,34 GHz (Tabela 3.3)
+        from lta.core import csrr as cs
+        _, _, fo = cs.estimativa_csrr(cs.GeometriaCSRR(3.661, 0.365, 0.24), RO3010)
+        self.assertAlmostEqual(fo / 2.34e9, 1, delta=0.20)
+        r = cs.raio_para_fo(2.34e9, 0.365, 0.24, RO3010, calibracao=2.34e9 / fo)
+        self.assertAlmostEqual(r, 3.661, delta=0.01)
+
+    def test_interdigital_bahl(self):
+        from lta.core import csrr as cs
+        c1 = cs.capacitancia_interdigital(6, 1.0, 0.1, RO3010)
+        self.assertAlmostEqual(cs.capacitancia_interdigital(6, 2.0, 0.1, RO3010) / c1, 2, places=9)  # ∝ ℓ
+        self.assertGreater(cs.capacitancia_interdigital(8, 1.0, 0.1, RO3010), c1)
+        self.assertTrue(0.05e-12 < c1 < 2e-12)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)
@@ -431,6 +474,10 @@ class Exportacao(unittest.TestCase):
                 construtores.linha_furos_terra(18.9, 4.725, 7, 50, RO3010),
                 construtores.linha_carga_capacitiva(
                     cc.geometria(cc.projeto_por_fase(35, 1.4e9, 47.5, 22e9), ARLON, 10, 50), 2, ARLON)]
+        from lta.core.csrr import GeometriaCSRR
+        for serie in ("Gap simples", "Interdigital"):
+            lays.append(construtores.linha_csrr(2, 8.0, 1.19, GeometriaCSRR(3.6, 0.3, 0.3), RO3010, serie,
+                                                nome=f"csrr_{serie[0]}"))
         with tempfile.TemporaryDirectory() as d:
             for lay in lays:
                 arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=10))

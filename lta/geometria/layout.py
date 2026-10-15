@@ -3,7 +3,8 @@
 Sistema de coordenadas: x ao longo da propagação (porta 1 em x=0), y
 transversal centrado na trilha, unidades em mm. Camadas:
   - topo: polígonos de cobre (trilha)
-  - terra: retângulo do plano de terra, com furos circulares opcionais
+  - terra: retângulo do plano de terra, com furos circulares e fendas
+    poligonais opcionais (ex.: CSRR gravado no terra)
   - placa: contorno do substrato
 """
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ class Layout:
     cotas: list = field(default_factory=list)         # (x1, y1, x2, y2, texto) [mm]
     celula: tuple = None                              # (x0, x1) da 1a célula unitária
     perfil: tuple = None                              # (x, w) contorno da trilha
+    fendas_terra: list = field(default_factory=list)  # polígonos (N,2) [mm] removidos do terra
 
     def largura_em(self, x):
         """Largura da trilha na posição x (0 se fora da trilha)."""
@@ -55,6 +57,18 @@ class Layout:
     @property
     def largura(self):
         return self.placa[3] - self.placa[1]
+
+
+def intervalos_em_x(poligono, x):
+    """Trechos [(y_a, y_b)] em que a vertical x atravessa o interior do polígono (par-ímpar)."""
+    p = np.asarray(poligono, dtype=float)
+    q = np.roll(p, -1, axis=0)
+    ys = []
+    for (x1, y1), (x2, y2) in zip(p, q):
+        if (x1 <= x < x2) or (x2 <= x < x1):
+            ys.append(y1 + (x - x1) * (y2 - y1) / (x2 - x1))
+    ys.sort()
+    return list(zip(ys[::2], ys[1::2]))
 
 
 def poligono_de_perfil(x, w):
