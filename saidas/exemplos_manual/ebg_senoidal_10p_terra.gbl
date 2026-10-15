@@ -1,0 +1,15 @@
+G04 Gerado por LTA - linhas periodicas*
+%FSLAX46Y46*%
+%MOMM*%
+%TF.FileFunction,Copper,L2,Bot*%
+%TF.FilePolarity,Positive*%
+%LPD*%
+G01*
+G36*
+X0Y-7599562D02*
+X110000000Y-7599562D01*
+X110000000Y7599562D01*
+X0Y7599562D01*
+X0Y-7599562D01*
+G37*
+M02*

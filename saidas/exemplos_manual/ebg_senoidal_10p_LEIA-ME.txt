@@ -1,0 +1,33 @@
+Arquivos gerados por LTA - linhas periodicas
+Estrutura: ebg_senoidal_10p
+Substrato: Rogers RO3010  er = 10.2  h = 1.27 mm  t = 35 um  tan(d) = 0.0022
+Placa: 110.000 mm x 15.199 mm (x = propagacao, porta 1 em x = 0). Unidades: mm.
+
+Camadas (DXF / GDSII):
+  TOPO_COBRE  (GDS 1)  trilha
+  TERRA       (GDS 2)  plano de terra (face inferior)
+  TERRA_FUROS (GDS 3)  furos a subtrair do plano de terra
+  PLACA       (GDS 10) contorno do substrato
+
+Como abrir:
+  KiCad   : abrir o .kicad_pcb no Editor de PCB; pressionar B para preencher a zona de terra.
+  Altium  : (a) File > Import > DXF/DWG no PCB, mapeando TOPO_COBRE -> Top Layer e TERRA -> Bottom Layer;
+            (b) File > Import Wizard > KiCad (abrir o .kicad_pcb); ou
+            (c) importar os Gerber (.gtl/.gbl/.gko) no CAMtastic e exportar para PCB.
+  ADS     : Layout > File > Import > GDSII (ou DXF), unidade 1 nm / um; mapear camadas 1 e 2 para
+            cond e o plano de terra do substrato; o .s2p (se exportado) entra em um bloco S2P.
+  HFSS    : Tools > Run Script > *_hfss.py (cria o projeto completo, com variaveis h_sub e h_ar).
+  CST     : Home > Macros > Edit/Run VBA Macro > *_cst.bas (parametros h, t, er, tand editaveis).
+
+Parametros de projeto:
+  tipo: EBG largura modulada (Senoidal)
+  periodo_mm: 10.0
+  periodos: 10
+  K_1_cm: 0.64
+  Zref_ohm: 50.0
+  Z0_min_max_ohm: 33.3/75.1
+  eeff_medio: 6.8153
+  f_Bragg_GHz: 5.742
+
+ATENCAO: geometria e uma estimativa inicial a partir de modelos de circuito/quase-estaticos.
+Validar por simulacao EM e medicao, com revisao tecnica, antes de qualquer uso em processo controlado.
