@@ -315,6 +315,114 @@ class AplicacoesEBG(unittest.TestCase):
         self.assertGreater(ql, 100)
 
 
+class CRLH(unittest.TestCase):
+    f = np.linspace(5e7, 8e9, 4000)
+
+    def test_balanceada_eq_3_66(self):
+        from lta.core import crlh
+        c = crlh.balanceada_por_banda(1e9, 6e9, 50)
+        self.assertTrue(c.balanceada)
+        b = c.bandas()
+        self.assertAlmostEqual(b["f_cl"] / 1e9, 1.0, places=6)
+        self.assertAlmostEqual(b["f_cr"] / 1e9, 6.0, places=6)
+        f0 = crlh.frequencia_transicao(c)
+        w0, wr = 2 * np.pi * f0, c.wR                     # eq. 3.66 na forma do livro
+        self.assertAlmostEqual(wr * (np.sqrt(1 + w0**2 / wr**2) - 1) / (2 * np.pi * 1e9), 1.0, places=6)
+        self.assertAlmostEqual(abs(c.zb(np.array([f0 * 0.999]))[0]), 50, delta=0.1)   # eq. 3.63
+
+    def test_dispersao_analitica_e_sinal(self):
+        from lta.core import crlh
+        for tipo in crlh.TIPOS:
+            c = crlh.CelulaCRLH(2.5e-9, 1e-12, 3e-9, 2e-12, tipo)
+            m = c.abcd(self.f)
+            w = 2 * np.pi * self.f
+            ok = (abs(w / c.ws - 1) > 0.01) & (abs(w / c.wp - 1) > 0.01)
+            np.testing.assert_allclose(c.cos_bl(self.f)[ok], (0.5 * (m[:, 0, 0] + m[:, 1, 1])).real[ok],
+                                       atol=1e-8)                       # eqs. 3.51 e 3.64
+        c = crlh.CelulaCRLH(2.5e-9, 1e-12, 3e-9, 2e-12)
+        bl, al = c.beta_l(self.f)
+        g1, g2 = c.gap[0] / (2 * np.pi), c.gap[1] / (2 * np.pi)
+        self.assertTrue(np.all(bl[(al < 1e-6) & (self.f < g1)] < 0))    # LH abaixo do gap
+        self.assertTrue(np.all(bl[(al < 1e-6) & (self.f > g2)] > 0))    # RH acima
+        self.assertTrue(np.all(al[(self.f > g1 * 1.001) & (self.f < g2 * 0.999)] > 0))  # eqs. 3.57-3.58
+        eps, mu = c.meio_efetivo(self.f, 6e-3)
+        lh = (al < 1e-6) & (bl < 0)
+        self.assertTrue(np.all(eps[lh] < 0) and np.all(mu[lh] < 0))     # eqs. 3.61-3.62
+
+    def test_sintese_por_fases(self):
+        from lta.core import crlh
+        c = crlh.balanceada_por_fases(0.9e9, np.radians(-30), 1.8e9, np.radians(30), 50)
+        bl, _ = c.beta_l(np.array([0.9e9, 1.8e9]))
+        np.testing.assert_allclose(np.degrees(bl), [-30, 30], atol=1.5)   # aproximação de grande λ
+
+
+class Extracao(unittest.TestCase):
+    # valores extraídos publicados no livro (Tabelas 3.1 e 3.3) e valores típicos para OSRR/OCSRR
+    CASOS = {
+        "CSRR (microstrip)": dict(L=5.78e-9, C=0.95e-12, Lc=1.65e-9, Cc=2.81e-12),
+        "CSRR + gap (microstrip)": dict(L=5.78e-9, Cg=0.31e-12, C=6.43e-12, Lc=1.49e-9, Cc=3.10e-12),
+        "SRR (CPW)": dict(C=2.07e-12, L=1.91e-9, Ls=0.24e-9, Cs=23.01e-12),
+        "SRR + fita (CPW)": dict(C=2.07e-12, Lp=1.38e-9, L=4.91e-9, Ls=1.68e-9, Cs=3.90e-12),
+        "OSRR (CPW)": dict(C=0.5e-12, Ls=6.16e-9, Cs=0.515e-12),
+        "OCSRR (CPW)": dict(L=0.5e-9, Lp=1.55e-9, Cp=1.91e-12),
+    }
+
+    def test_ida_e_volta(self):
+        from lta.core import extracao as ex
+        f = np.linspace(0.2e9, 6e9, 3001)
+        for nome, p in self.CASOS.items():
+            q, _, err = ex.extrair(nome, f, ex.s_modelo(nome, p, f))
+            for k in p:
+                self.assertAlmostEqual(q[k] / p[k], 1, delta=0.005, msg=f"{nome}: {k}")
+            self.assertLess(err, 2e-3)
+
+    def test_touchstone_ida_e_volta(self):
+        from lta.core import extracao as ex
+        f = np.linspace(0.5e9, 5e9, 901)
+        s = ex.s_modelo("CSRR + gap (microstrip)", self.CASOS["CSRR + gap (microstrip)"], f)
+        with tempfile.TemporaryDirectory() as d:
+            simuladores.touchstone(Path(d) / "c.s2p", f, s, 50)
+            f2, s2, z0 = simuladores.ler_touchstone(Path(d) / "c.s2p")
+            # formato MA em MHz, com dados em duas linhas
+            linhas = ["! teste", "# MHz S MA R 50"]
+            for fi, si in zip(f, s):
+                v = [si[0, 0], si[1, 0], si[0, 1], si[1, 1]]
+                linhas.append(f"{fi / 1e6:.6f} " + " ".join(f"{abs(x):.9e} {np.degrees(np.angle(x)):.9f}" for x in v[:2]))
+                linhas.append(" ".join(f"{abs(x):.9e} {np.degrees(np.angle(x)):.9f}" for x in v[2:]))
+            (Path(d) / "m.s2p").write_text("\n".join(linhas))
+            f3, s3, _ = simuladores.ler_touchstone(Path(d) / "m.s2p")
+        np.testing.assert_allclose(f2, f)
+        np.testing.assert_allclose(s2, s, atol=1e-8)
+        np.testing.assert_allclose(f3, f, rtol=1e-9)
+        np.testing.assert_allclose(s3, s, atol=1e-7)
+        self.assertEqual(z0, 50)
+
+    def test_robustez_perdas(self):
+        # dados com perdas no ressonador (R ‖ tanque), fora do modelo sem perdas do Apêndice G
+        from lta.core import extracao as ex
+        f = np.linspace(0.5e9, 5e9, 2001)
+        w = 2 * np.pi * f
+        p = self.CASOS["CSRR + gap (microstrip)"]
+        tanque = 1 / (1 / (1j * w * p["Lc"]) + 1j * w * p["Cc"] + 1 / 5e3)
+        braco = 1j * w * p["L"] / 2 + 1 / (2j * w * p["Cg"])
+        m = abcd.cascata(abcd.series(braco), abcd.shunt(1 / (1 / (1j * w * p["C"]) + tanque)), abcd.series(braco))
+        q, _, err = ex.extrair("CSRR + gap (microstrip)", f, abcd.abcd_para_s(m, 50))
+        for k in p:
+            self.assertAlmostEqual(q[k] / p[k], 1, delta=0.02, msg=k)
+        self.assertLess(err, 0.02)
+
+    def test_transformacao_srr_tabelas_3_1_e_3_2(self):
+        # eqs. 3.71-3.74: modelo físico (Tabela 3.2) -> π equivalente (Tabela 3.1)
+        from lta.core import extracao as ex
+        l_, lp_, ls_, cs_ = ex.srr_cpw_transformado(1.94e-9, 1.23e-9, 17.16e-9, 0.31e-12, 0.20e-9)
+        for calc, livro in ((l_, 4.91e-9), (lp_, 1.38e-9), (ls_, 1.68e-9), (cs_, 3.90e-12)):
+            self.assertAlmostEqual(calc / livro, 1, delta=0.03)
+        l_, lp_, ls_, cs_ = ex.srr_cpw_transformado(2.15e-9, 1.45e-9, 17.57e-9, 0.31e-12)
+        for calc, livro in ((l_, 1.91e-9), (ls_, 0.24e-9), (cs_, 23.01e-12)):
+            self.assertAlmostEqual(calc / livro, 1, delta=0.03)
+        self.assertTrue(np.isinf(lp_))
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)

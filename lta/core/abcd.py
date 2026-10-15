@@ -99,6 +99,17 @@ def abcd_para_s(m, z0=50.0):
     return s
 
 
+def s_para_abcd(s, z0=50.0):
+    """Conversão S -> ABCD (inversa de abcd_para_s), referência z0 nas duas portas."""
+    s11, s12, s21, s22 = s[..., 0, 0], s[..., 0, 1], s[..., 1, 0], s[..., 1, 1]
+    m = np.empty(s.shape, dtype=complex)
+    m[..., 0, 0] = ((1 + s11) * (1 - s22) + s12 * s21) / (2 * s21)
+    m[..., 0, 1] = z0 * ((1 + s11) * (1 + s22) - s12 * s21) / (2 * s21)
+    m[..., 1, 0] = ((1 - s11) * (1 - s22) - s12 * s21) / (2 * s21 * z0)
+    m[..., 1, 1] = ((1 - s11) * (1 + s22) + s12 * s21) / (2 * s21)
+    return m
+
+
 def db(x):
     return 20 * np.log10(np.maximum(np.abs(x), 1e-15))
 

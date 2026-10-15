@@ -10,6 +10,8 @@
 Trilha e terra no HFSS são folhas PEC (espessura nula); no CST são sólidos PEC
 com espessura t. Ajuste para cobre/rugosidade conforme a necessidade.
 """
+from pathlib import Path
+
 import numpy as np
 
 
@@ -273,6 +275,49 @@ def touchstone(caminho, f_hz, s, z0=50.0, comentario=""):
         linhas.append(f"{fi / 1e9:.9g} " + " ".join(f"{v.real:.9e} {v.imag:.9e}" for v in vals))
     caminho.write_text("\n".join(linhas) + "\n", encoding="ascii")
     return [caminho]
+
+
+def ler_touchstone(caminho):
+    """Lê .s2p (Touchstone v1): retorna (f [Hz], S (Nf, 2, 2), z0).
+
+    Aceita unidades Hz/kHz/MHz/GHz, formatos RI, MA e DB, comentários '!' e
+    dados quebrados em várias linhas. Só parâmetros S de 2 portas.
+    """
+    escala = {"HZ": 1.0, "KHZ": 1e3, "MHZ": 1e6, "GHZ": 1e9}
+    unid, fmt, z0 = 1e9, "MA", 50.0
+    nums = []
+    for linha in Path(caminho).read_text(encoding="latin-1").splitlines():
+        linha = linha.split("!", 1)[0].strip()
+        if not linha:
+            continue
+        if linha.startswith("#"):
+            toks = linha[1:].upper().split()
+            for i, t in enumerate(toks):
+                if t in escala:
+                    unid = escala[t]
+                elif t in ("RI", "MA", "DB"):
+                    fmt = t
+                elif t == "R" and i + 1 < len(toks):
+                    z0 = float(toks[i + 1])
+                elif t in ("Y", "Z", "H", "G"):
+                    raise ValueError(f"Parâmetros {t} não suportados; exporte parâmetros S.")
+            continue
+        if linha.startswith("["):
+            raise ValueError("Touchstone v2 com palavras-chave não suportado; exporte em v1 (.s2p).")
+        nums += [float(x) for x in linha.split()]
+    if not nums or len(nums) % 9:
+        raise ValueError("Arquivo não parece um .s2p de 2 portas (9 números por frequência).")
+    d = np.array(nums).reshape(-1, 9)
+    a, b = d[:, 1::2], d[:, 2::2]
+    if fmt == "RI":
+        v = a + 1j * b
+    elif fmt == "MA":
+        v = a * np.exp(1j * np.radians(b))
+    else:
+        v = 10 ** (a / 20) * np.exp(1j * np.radians(b))
+    s = np.empty((len(d), 2, 2), dtype=complex)
+    s[:, 0, 0], s[:, 1, 0], s[:, 0, 1], s[:, 1, 1] = v[:, 0], v[:, 1], v[:, 2], v[:, 3]
+    return d[:, 0] * unid, s, z0
 
 
 def csv_s(caminho, f_hz, s):
