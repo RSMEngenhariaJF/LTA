@@ -13,6 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lta.core import abcd, carga_capacitiva as cc, modos_acoplados as cm  # noqa: E402
+from lta.core import microstrip as ms  # noqa: E402
 from lta.core.microstrip import Substrato, analise, sintese  # noqa: E402
 from lta.exportacao import FORMATOS, exportar, simuladores  # noqa: E402
 from lta.geometria import construtores  # noqa: E402
@@ -164,6 +165,85 @@ class CargaCapacitiva(unittest.TestCase):
         self.assertAlmostEqual(p.L * 1e9, 3.1, delta=0.35)
         self.assertAlmostEqual(p.C * 1e12, 0.17, delta=0.03)
         self.assertAlmostEqual(p.Cls * 1e12, 1.2, delta=0.15)
+
+
+class PerdasDispersao(unittest.TestCase):
+    def test_profundidade_pelicular(self):
+        # livro, nota 24 (cap. 1): cobre, 2,06 µm a 1 GHz e 0,66 µm a 10 GHz
+        d = ms.profundidade_pelicular(np.array([1e9, 10e9])) * 1e6
+        self.assertAlmostEqual(d[0], 2.06, delta=0.05)
+        self.assertAlmostEqual(d[1], 0.66, delta=0.02)
+
+    def test_alfa_condutor_tira_larga(self):
+        # eq. 1.90 tende a eq. 1.89 (αc = Rs/(Z0 W)) para W/h >> 1
+        w = 40 * RO3010.h_mm
+        z0, _ = analise(w, RO3010)
+        ref = ms.resistencia_superficial(1e10, RO3010) / (z0 * w * 1e-3)
+        self.assertAlmostEqual(float(ms.alfa_condutor(w, RO3010, 1e10)[0, 0]) / ref, 1.0, delta=0.15)
+
+    def test_alfa_condutor_continuo(self):
+        # emendas entre as expressões de Pucel e a eq. 1.90
+        for u in (1 / (2 * np.pi), 2.0):
+            a = ms.alfa_condutor(np.array([0.999, 1.001]) * u * RO3010.h_mm, RO3010, 1e10)[0]
+            self.assertLess(abs(a[1] / a[0] - 1), 0.05)
+
+    def test_alfa_dieletrico_tem(self):
+        # com εeff = εr, a eq. 1.68 se reduz à eq. 1.67: αd = (β/2)·tanδ
+        f = 5e9
+        ad = float(ms.alfa_dieletrico(1.0, RO3010, f, eeff=RO3010.er)[0, 0])
+        beta = 2 * np.pi * f * np.sqrt(RO3010.er) / ms.C0
+        self.assertAlmostEqual(ad, beta / 2 * RO3010.tand, places=9)
+
+    def test_dispersao_limites(self):
+        w = sintese(50, RO3010)
+        ee0 = float(analise(w, RO3010)[1])
+        ee = ms.eeff_dispersivo(w, RO3010, np.array([1e6, 5e9, 20e9, 100e9]))[:, 0]
+        self.assertAlmostEqual(ee[0], ee0, places=4)
+        self.assertTrue(np.all(np.diff(ee) > 0))
+        self.assertLess(ee[-1], RO3010.er)
+
+    def test_ebg_dispersivo_fig_2_11(self):
+        # com dispersão, o centro da 1ª banda se aproxima do valor do livro (5,66 GHz, solver EM)
+        p = cm.perfil("Senoidal", 64.0, 0.01, 10)
+        f = np.linspace(5e9, 6.5e9, 301)
+        centros = []
+        for disp in (False, True):
+            z0, ee, al = cm.parametros_linha(f, p, RO3010, dispersivo=disp)
+            _, s21 = cm.resolver_cmt(f, p.z, z0, ee, al)
+            centros.append(f[np.argmin(abs(s21))] / 1e9)
+        self.assertAlmostEqual(centros[1], 5.66, delta=0.08)
+        self.assertLess(abs(centros[1] - 5.66), abs(centros[0] - 5.66))
+
+    def test_cmt_com_perdas(self):
+        p = cm.perfil("Senoidal", 64.0, 0.01, 10)
+        f = np.linspace(1e9, 8e9, 300)
+        z0, ee, al = cm.parametros_linha(f, p, RO3010, perdas=True, dispersivo=True)
+        s11, s21 = cm.resolver_cmt(f, p.z, z0, ee, al)
+        a11, a21 = cm.resolver_abcd(f, p.z, z0, ee, 50, al)
+        ok = abcd.db(s21) > -30
+        np.testing.assert_allclose(abcd.db(s21)[ok], abcd.db(a21)[ok], atol=0.5)
+        self.assertTrue(np.all(abs(s11) ** 2 + abs(s21) ** 2 < 1))
+        # sem as opções, igual ao modelo original
+        z0, ee, al = cm.parametros_linha(f, p, RO3010)
+        _, ee1 = cm.larguras(p, RO3010)
+        np.testing.assert_allclose(cm.resolver_cmt(f, p.z, z0, ee, al)[1], cm.resolver_cmt(f, p.z, p.z0, ee1)[1])
+
+    def test_carga_microstrip_sem_opcoes(self):
+        p = cc.projeto_por_fase(35, 1.4e9, 47.5, 22e9)
+        geo = cc.geometria(p, ARLON, 10, 47.5)
+        f = np.linspace(1e8, 12e9, 50)
+        np.testing.assert_allclose(cc.celula_microstrip(f, p, geo, ARLON), cc.celula_distribuida(f, p))
+        al, _ = abcd.dispersao(cc.celula_microstrip(f, p, geo, ARLON, perdas=True))
+        self.assertTrue(np.all(al[f < 0.5 * p.fc] > 0))
+
+    def test_atraso_grupo_linha(self):
+        # linha uniforme casada: τg = l·√εeff / c
+        w = sintese(50, RO3010)
+        z0, ee = (float(x) for x in analise(w, RO3010))
+        f = np.linspace(1e8, 10e9, 2000)
+        m = abcd.linha(z0, 2 * np.pi * f * np.sqrt(ee) / ms.C0 * 0.05)
+        tau = abcd.atraso_grupo(f, abcd.abcd_para_s(m, z0)[:, 1, 0])
+        np.testing.assert_allclose(tau, 0.05 * np.sqrt(ee) / ms.C0, rtol=1e-6)
 
 
 class Exportacao(unittest.TestCase):

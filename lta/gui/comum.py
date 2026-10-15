@@ -131,6 +131,38 @@ class Formulario(ttk.Frame):
             self.ao_mudar(chave, func)
 
 
+class OpcoesModelo(ttk.LabelFrame):
+    """Caixas de seleção do modelo físico da microstrip: perdas e dispersão."""
+
+    def __init__(self, mestre):
+        super().__init__(mestre, text="Modelo físico da linha", padding=6)
+        self.perdas = tk.BooleanVar(value=False)
+        self.dispersao = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self, text="Perdas: condutor (σ, t, rugosidade) e dielétrico (tan δ)",
+                        variable=self.perdas).pack(anchor="w")
+        ttk.Checkbutton(self, text="Dispersão de εeff e Z0 (Kirschning-Jansen)",
+                        variable=self.dispersao).pack(anchor="w")
+
+    def get(self):
+        return self.perdas.get(), self.dispersao.get()
+
+    def set(self, perdas=False, dispersao=False):
+        self.perdas.set(perdas)
+        self.dispersao.set(dispersao)
+
+    def descrever(self, sub):
+        p, d = self.get()
+        if not (p or d):
+            return "Modelo: quase-estático, sem perdas."
+        partes = []
+        if p:
+            partes.append(f"perdas (σ = {sub.sigma / 1e6:g} MS/m, t = {sub.t_um:g} µm, "
+                          f"rug. = {sub.rug_um:g} µm, tan δ = {sub.tand:g})")
+        if d:
+            partes.append("dispersão Kirschning-Jansen")
+        return "Modelo: " + " + ".join(partes) + "."
+
+
 class Grafico(ttk.Frame):
     """Figura matplotlib com barra de ferramentas (zoom, salvar imagem...)."""
 

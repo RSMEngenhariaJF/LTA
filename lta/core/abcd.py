@@ -103,6 +103,12 @@ def db(x):
     return 20 * np.log10(np.maximum(np.abs(x), 1e-15))
 
 
+def atraso_grupo(f, s21):
+    """Atraso de grupo τg = -dφ/dω [s] a partir da fase de S21 (φ desenrolada)."""
+    fase = np.unwrap(np.angle(s21))
+    return -np.gradient(fase, 2 * np.pi * np.asarray(f, dtype=float))
+
+
 # ---------------------------------------------------------------------------
 # Célula genérica de elementos concentrados
 # ---------------------------------------------------------------------------

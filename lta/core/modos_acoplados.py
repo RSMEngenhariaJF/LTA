@@ -14,6 +14,7 @@ import numpy as np
 
 from . import abcd
 from .microstrip import C0, Substrato, analise, sintese
+from .microstrip import parametros_linha as _parametros_microstrip
 
 TIPOS = ("Senoidal", "Quadrada")
 
@@ -73,42 +74,72 @@ def eeff_medio(z, eeff):
     return (np.trapezoid(np.sqrt(eeff), z) / (z[-1] - z[0])) ** 2
 
 
-def resolver_cmt(f, z, z0, eeff):
+def parametros_linha(f, p: Perfil, sub: Substrato, perdas=False, dispersivo=False):
+    """(Z0, εeff, α) do perfil por frequência, forma (Nf, Nnós), para os solvers.
+
+    A largura vem da síntese quase-estática (como no layout); com dispersão, Z0 e
+    εeff variam com f. Sem as opções, equivale a (p.z0, εeff, 0) repetidos em f.
+    """
+    w, _ = larguras(p, sub)
+    z0, ee, alfa = _parametros_microstrip(w, sub, f, perdas, dispersivo)
+    if not dispersivo:
+        z0 = np.broadcast_to(p.z0, ee.shape).copy()   # exatamente o perfil projetado
+    return z0, ee, alfa
+
+
+def _por_frequencia(f, *arrays):
+    """Converte arrays (Nnós,) ou (Nf, Nnós) para (Nf, Nnós)."""
+    return [np.broadcast_to(np.asarray(a, dtype=float), (f.size, np.shape(a)[-1])) for a in arrays]
+
+
+def resolver_cmt(f, z, z0, eeff, alfa=None):
     """Solução numérica das equações acopladas (2.48) -> (S11, S21).
 
-    Discretiza em segmentos com beta e K constantes; a matriz de transição
-    de cada segmento é exp(M dz) = cosh(g dz) I + sinh(g dz)/g M, g^2 = K^2 - beta^2.
+    Discretiza em segmentos com γ = α + jβ e K constantes; a matriz de transição
+    de cada segmento é exp(M dz) = cosh(g dz) I + sinh(g dz)/g M, com
+    M = [[-γ, K], [K, γ]] e g^2 = K^2 + γ^2 (sem perdas: g^2 = K^2 - β^2).
+    z0, eeff e alfa [Np/m] podem ser (Nnós,) ou (Nf, Nnós) (dispersão e perdas).
     """
     f = np.asarray(f, dtype=float)
+    if alfa is None:
+        alfa = np.zeros(np.shape(eeff)[-1])
+    z0, eeff, alfa = _por_frequencia(f, z0, eeff, alfa)
     dz = np.diff(z)
-    k = -0.5 * np.diff(np.log(z0)) / dz
-    ee_m = 0.5 * (eeff[1:] + eeff[:-1])
+    k = -0.5 * np.diff(np.log(z0), axis=1) / dz
+    ee_m = 0.5 * (eeff[:, 1:] + eeff[:, :-1])
+    al_m = 0.5 * (alfa[:, 1:] + alfa[:, :-1])
     t = np.broadcast_to(np.eye(2, dtype=complex), (f.size, 2, 2)).copy()
-    for dzi, ki, eei in zip(dz, k, ee_m):
-        beta = 2 * np.pi * f * np.sqrt(eei) / C0
-        g = np.sqrt(ki**2 - beta**2 + 0j)
+    p = np.empty((f.size, 2, 2), dtype=complex)
+    for i, dzi in enumerate(dz):
+        ki = k[:, i]
+        gama = al_m[:, i] + 2j * np.pi * f * np.sqrt(ee_m[:, i]) / C0
+        g = np.sqrt(ki**2 + gama**2 + 0j)
         ch = np.cosh(g * dzi)
         sh_g = np.where(np.abs(g) * dzi < 1e-12, dzi, np.sinh(g * dzi) / np.where(g == 0, 1, g))
-        p = np.empty((f.size, 2, 2), dtype=complex)
-        p[:, 0, 0] = ch - 1j * beta * sh_g
+        p[:, 0, 0] = ch - gama * sh_g
         p[:, 0, 1] = ki * sh_g
         p[:, 1, 0] = ki * sh_g
-        p[:, 1, 1] = ch + 1j * beta * sh_g
+        p[:, 1, 1] = ch + gama * sh_g
         t = p @ t
     s11 = -t[:, 1, 0] / t[:, 1, 1]
     s21 = t[:, 0, 0] + t[:, 0, 1] * s11
     return s11, s21
 
 
-def resolver_abcd(f, z, z0, eeff, z_ref=50.0):
-    """Verificação independente: cascata de trechos uniformes curtos."""
+def resolver_abcd(f, z, z0, eeff, z_ref=50.0, alfa=None):
+    """Verificação independente: cascata de trechos uniformes curtos (θ = (β - jα)·dz)."""
     f = np.asarray(f, dtype=float)
+    if alfa is None:
+        alfa = np.zeros(np.shape(eeff)[-1])
+    z0, eeff, alfa = _por_frequencia(f, z0, eeff, alfa)
     dz = np.diff(z)
-    zm = np.sqrt(z0[1:] * z0[:-1])
-    ee_m = 0.5 * (eeff[1:] + eeff[:-1])
+    zm = np.sqrt(z0[:, 1:] * z0[:, :-1])
+    ee_m = 0.5 * (eeff[:, 1:] + eeff[:, :-1])
+    al_m = 0.5 * (alfa[:, 1:] + alfa[:, :-1])
     t = np.broadcast_to(np.eye(2, dtype=complex), (f.size, 2, 2)).copy()
-    for dzi, zi, eei in zip(dz, zm, ee_m):
-        t = t @ abcd.linha(zi, 2 * np.pi * f * np.sqrt(eei) / C0 * dzi)
+    for i, dzi in enumerate(dz):
+        theta = (2 * np.pi * f * np.sqrt(ee_m[:, i]) / C0 - 1j * al_m[:, i]) * dzi
+        t = t @ abcd.linha(zm[:, i], theta)
     s = abcd.abcd_para_s(t, z_ref)
     return s[:, 0, 0], s[:, 1, 0]
 

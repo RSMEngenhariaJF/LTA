@@ -36,10 +36,10 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 
 | Aba | Função | Seções do livro |
 |---|---|---|
-| **Substrato** | εr, h, t, tan δ usados por todas as abas; calculadora microstrip Z0 ↔ W | cap. 1; Hammerstad-Jensen (1980) |
+| **Substrato** | εr, h, t, tan δ, σ e rugosidade usados por todas as abas; calculadora microstrip Z0 ↔ W com εeff(f), Z0(f), δ, αc e αd numa frequência | cap. 1 (eqs. 1.68, 1.79, 1.83, 1.90); Hammerstad-Jensen (1980) |
 | **Célula ABCD** | Dispersão (βl, αl), impedância de Bloch e S de N células para topologias T, Π, L. O ramo série é Ls+Cs e o paralelo é Cp‖Lp, o que cobre linhas RH, LH e CRLH | 2.3 (eqs. 2.21, 2.26, 2.40) |
-| **Carga capacitiva** | Projeto de linha slow-wave: (fc, ZB, fs) ou (fase em f0, ZB, fs) → L, C, Cls → geometria microstrip com patches | 2.5.2 (eqs. 2.116–2.126) |
-| **EBG / Modos acoplados** | Perfil Z0(z) senoidal ou quadrado → W(z) → S por CMT numérico, cascata ABCD e solução analítica; furos no plano de terra (geometria e Bragg) | 2.4 e 2.5.1 (eqs. 2.48–2.105) |
+| **Carga capacitiva** | Projeto de linha slow-wave: (fc, ZB, fs) ou (fase em f0, ZB, fs) → L, C, Cls → geometria microstrip com patches; atraso de grupo e atenuação por célula | 2.5.2 (eqs. 2.116–2.126) |
+| **EBG / Modos acoplados** | Perfil Z0(z) senoidal ou quadrado → W(z) → S por CMT numérico, cascata ABCD e solução analítica; furos no plano de terra (geometria e Bragg); atraso de grupo | 2.4 e 2.5.1 (eqs. 2.48–2.105) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -53,6 +53,25 @@ Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **E
 - **Banda útil:** as abas Célula, Carga capacitiva e EBG informam as faixas em que |S11| ≤ −15 dB e |S21| ≥ −1 dB. Os critérios são editáveis na aba Célula.
 - **Regra prática para escadas LC:** S11 ≤ −15 dB, para qualquer número de células, é garantido até f ≈ 0,55·fc (fc ≥ 1,8·fmax).
 - **EBG:** multiplicar K(z) por `janela(z)` ou `hann(z)` no perfil personalizado reduz a ondulação e amplia a faixa útil abaixo da banda rejeitada. No exemplo do livro, ela passa de 2,36 para 3,68 GHz.
+
+### Perdas e dispersão (modelo físico da linha)
+
+As abas **EBG / Modos acoplados** e **Carga capacitiva** têm a caixa **Modelo físico da linha**, com duas opções independentes. Desligadas, o cálculo é o quase-estático sem perdas das versões anteriores, com resultado idêntico.
+
+- **Perdas:** α = αc + αd, e a constante de propagação passa a ser γ = α + jβ ([microstrip.py](../lta/core/microstrip.py)).
+  - **Dielétrico:** eq. 1.68.
+  - **Condutor:** eq. 1.90 para W ≥ 2h e Pucel/Gupta (1979) para tiras mais estreitas. Rs = 1/(σδ) (eqs. 1.79 e 1.83), com correção de espessura finita (t comparável a δ) e de rugosidade (Hammerstad: K = 1 + (2/π)·atan(1,4·(Δ/δ)²)).
+  - σ, t, rugosidade e tan δ vêm da aba Substrato.
+- **Dispersão:** εeff(f) por Kirschning-Jansen (1982), válido para εr ≤ 20 e f·h ≤ 25 GHz·mm; Z0(f) por Bianco et al. (1978).
+  - Na EBG do exemplo Fig. 2.11, o centro da banda passa de 5,82 para 5,64 GHz. O livro (solver EM) dá 5,66 GHz.
+  - Com dispersão, o Z0 das pontas da linha sobe com a frequência (≈ 54 Ω a 10 GHz em RO3010). A cascata ABCD, referida a Zref fixo, mostra esse descasamento; o CMT usa como referência o Z0 local das pontas. Por isso, as curvas de |S11| se afastam em alta frequência.
+- **EBG:** o CMT numérico (γ complexo nas equações acopladas) e a cascata ABCD aceitam Z0, εeff e α por frequência. O texto informa a **perda dissipativa** −10·log(|S11|²+|S21|²) na banda passante e os centros de banda do cálculo numérico. O último gráfico mostra α(f) e εeff(f) da linha de referência.
+- **Carga capacitiva:**
+  - A linha de alta impedância recebe α(f) e εeff(f) da sua largura (`celula_microstrip`).
+  - A perda do patch é desprezada, e Cls continua concentrada.
+  - Gráficos novos: atraso de grupo e atenuação por célula (αl de Bloch).
+- **Atraso de grupo:** τg = −dφ(S21)/dω ([abcd.py](../lta/core/abcd.py)). Use pontos suficientes para que a fase não salte mais de π entre amostras.
+- As soluções analíticas da seção 2.4 (eqs. 2.76–2.89) continuam sem perdas e sem dispersão.
 
 ### Perfil EBG personalizado (função de z)
 
@@ -117,6 +136,8 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | Banda rejeitada senoidal (eq. 2.89) | 2,55 GHz | 2,61 GHz |
 | \|S21\|mín quadrada, n = 1, 3, 5 | −49,3 / −12,5 / −5,7 dB | −49,3 / −12,5 / −5,7 dB |
 | f_max (eq. 2.84) | 5,66 GHz | 5,74 GHz (\*) |
+| Centro da banda, Fig. 2.11, CMT com dispersão | 5,66 GHz | 5,64 GHz |
+| Profundidade pelicular do cobre, 1 e 10 GHz (nota 24, cap. 1) | 2,06 / 0,66 µm | 2,09 / 0,66 µm |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -124,7 +145,8 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 
 ## 5. Limitações conhecidas
 
-- Microstrip quase-estática: t = 0, sem dispersão e sem perdas de condutor ou dielétrico nos cálculos.
+- Microstrip: Z0 e εeff com t = 0. Perdas e dispersão são opcionais (ver seção 2) e não incluem radiação, ondas de superfície nem a perda dos patches.
+- Os scripts HFSS e CST ainda modelam o cobre como condutor perfeito (PEC); σ e rugosidade não são exportados.
 - A geometria da linha com carga capacitiva é **estimativa inicial**, porque não modela os efeitos de degrau e borda do patch. Em εr alto, o patch pode não caber no período: a ferramenta avisa e é preciso reduzir a "Z do patch".
 - EBG com furos no terra: só a geometria e a estimativa de Bragg; a resposta exige simulação EM (eq. 2.51).
 - Os scripts HFSS e CST e o `.kicad_pcb` seguem a sintaxe documentada dessas ferramentas, mas **não foram executados nas ferramentas reais** durante o desenvolvimento. Teste na versão instalada e reporte ajustes.

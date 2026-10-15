@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import abcd
-from .microstrip import C0, Substrato, analise, sintese
+from .microstrip import C0, Substrato, analise, parametros_linha, sintese
 
 
 @dataclass
@@ -76,6 +76,24 @@ def celula_distribuida(f, p: ProjetoCarga):
     kl = 2 * np.pi * np.asarray(f) * np.sqrt(p.L * p.C)
     meia = abcd.linha(p.zo, kl / 2)
     return abcd.cascata(meia, abcd.shunt(1j * 2 * np.pi * np.asarray(f) * p.Cls), meia)
+
+
+def celula_microstrip(f, p: ProjetoCarga, geo: "GeometriaCarga", sub: Substrato, perdas=False,
+                      dispersivo=False):
+    """Célula distribuída com perdas e/ou dispersão da linha de alta impedância.
+
+    O comprimento elétrico vem de kl = w·sqrt(LC) escalado por sqrt(εeff(f)/εeff(0)); a
+    atenuação é α(f)·l, com α da linha de largura geo.w_linha (eqs. 1.68 e 1.90).
+    A perda do patch (trecho largo, curto) é desprezada; Cls continua concentrada.
+    Sem as opções, é idêntica a celula_distribuida.
+    """
+    f = np.asarray(f, dtype=float)
+    z0, ee, alfa = (x[:, 0] for x in parametros_linha(geo.w_linha, sub, f, perdas, dispersivo))
+    kl = 2 * np.pi * f * np.sqrt(p.L * p.C) * np.sqrt(ee / geo.eeff_linha)
+    zo = p.zo * z0 / float(analise(geo.w_linha, sub)[0])
+    theta = kl - 1j * alfa * geo.periodo * 1e-3
+    meia = abcd.linha(zo, theta / 2)
+    return abcd.cascata(meia, abcd.shunt(1j * 2 * np.pi * f * p.Cls), meia)
 
 
 def celula_concentrada(f, p: ProjetoCarga):

@@ -7,10 +7,10 @@ import numpy as np
 from ..core import abcd
 from ..core import modos_acoplados as cm
 from ..core import perfil_personalizado as pp
-from ..core.microstrip import analise, sintese
+from ..core.microstrip import NP_DB, analise, parametros_linha, sintese
 from ..geometria import construtores
 from .aba_substrato import PREDEFINIDOS
-from .comum import AbaBase, AreaTexto, Formulario, protegido
+from .comum import AbaBase, AreaTexto, Formulario, OpcoesModelo, protegido
 from .previa import PreviaEstrutura
 
 PERTURBACOES = ("Senoidal (largura)", "Quadrada (largura)", "Furos no terra", "Personalizado (função)")
@@ -42,6 +42,8 @@ class AbaEBG(AbaBase):
             ("npts", "Pontos", 800, ""),
         ], titulo="Estrutura periódica")
         self.form.pack(fill="x")
+        self.modelo_fis = OpcoesModelo(self.painel)
+        self.modelo_fis.pack(fill="x", pady=(8, 0))
         self._painel_personalizado()
         self.botoes(("Calcular", self.calcular), ("Ex. Fig. 2.11 (sen)", self.ex_sen),
                     ("Ex. Fig. 2.14 (quad)", self.ex_quad), ("Ex. Fig. 2.16 (furos)", self.ex_furos),
@@ -174,18 +176,21 @@ class AbaEBG(AbaBase):
             return self._furos(v, d)
         p, w, ee, ee_med, tipo = d["p"], d["w"], d["ee"], d["ee_med"], d["tipo"]
         f = np.linspace(v["fmin"], v["fmax"], v["npts"]) * 1e9
-        s11, s21 = cm.resolver_cmt(f, p.z, p.z0, ee)
-        a11, a21 = cm.resolver_abcd(f, p.z, p.z0, ee, v["zref"])
+        sub = self.estado.substrato
+        perdas, dispersivo = self.modelo_fis.get()
+        z0f, eef, alf = cm.parametros_linha(f, p, sub, perdas, dispersivo)
+        s11, s21 = cm.resolver_cmt(f, p.z, z0f, eef, alf)
+        a11, a21 = cm.resolver_abcd(f, p.z, z0f, eef, v["zref"], alf)
         bandas = cm.bandas_analiticas(p, ee_med)
 
         # S22: mesma estrutura vista da porta 2 (perfil invertido); recíproca -> S12 = S21
-        s22, _ = cm.resolver_cmt(f, p.z, p.z0[::-1].copy(), ee[::-1].copy())
+        s22, _ = cm.resolver_cmt(f, p.z, z0f[:, ::-1], eef[:, ::-1], alf[:, ::-1])
         s = np.empty((f.size, 2, 2), dtype=complex)
         s[:, 0, 0], s[:, 1, 0], s[:, 0, 1], s[:, 1, 1] = s11, s21, s21, s22
         self._ultimo = (f, s, v["zref"], v)
         self.estado.publicar_resultado("ebg", f, s, v["zref"])
 
-        ax = self.grafico.eixos(2, 2)
+        ax = self.grafico.eixos(2, 3)
         zmm = p.z * 1e3
         ax[0].plot(zmm, p.z0, label="Z0(z)")
         ax[0].set_ylabel("Z0 [Ω]")
@@ -210,6 +215,8 @@ class AbaEBG(AbaBase):
             ax[2].plot(f / 1e9, abcd.db(est), ":", color="k", label="Fourier de K(z) (eq. 2.95)")
         ax[1].set_ylabel("|S21| [dB]")
         ax[2].set_ylabel("|S11| [dB]")
+        ax[1].set_title("Transmissão", fontsize=9)
+        ax[2].set_title("Reflexão", fontsize=9)
         for a in ax[1:3]:
             a.set_xlabel("f [GHz]")
             a.set_ylim(-70, 3)
@@ -224,10 +231,19 @@ class AbaEBG(AbaBase):
         ax[3].set_ylabel("K(z) [1/cm]")
         ax[3].set_title("Coeficiente de acoplamento (eq. 2.50)", fontsize=9)
         ax[3].grid(True, alpha=0.3)
+        tau = abcd.atraso_grupo(f, s21) * 1e9
+        passa = abcd.db(s21) > -10
+        ax[4].plot(f / 1e9, np.where(passa, tau, np.nan))
+        ax[4].set_xlabel("f [GHz]")
+        ax[4].set_ylabel("τg [ns]")
+        ax[4].set_title("Atraso de grupo (onde |S21| > -10 dB)", fontsize=9)
+        ax[4].grid(True, alpha=0.3)
+        self._grafico_linha_ref(ax[5], f, sub, v["zref"])
         self.grafico.desenhar()
         self.ver_resultados()
 
         self._banda = abcd.descrever_banda(f, s)
+        self._modelo = self._texto_modelo(f, s11, s21, sub)
         if personalizado:
             return self._texto_personalizado(v, p, w, ee_med, f, s21, d["avisos"])
         linhas = [f"Perfil {tipo}: l = {v['periodo']:g} mm, {v['n']} períodos, L = {p.comprimento * 1e3:g} mm",
@@ -237,8 +253,13 @@ class AbaEBG(AbaBase):
                   " n   fmax[GHz]  |S21|min[dB]  BW[GHz]"]
         for b in bandas:
             linhas.append(f" {b.n}   {b.f_max / 1e9:8.3f}   {20 * np.log10(b.s21_min):10.2f}   {b.banda / 1e9:7.3f}")
-        linhas += ["", self._banda, "", "CMT e ABCD desprezam descontinuidades e radiação;",
-                   "εeff vem de fórmula fechada (o livro usa EM)."]
+        numericas = pp.bandas_detectadas(f, s21)
+        if numericas:
+            linhas += ["", "Bandas no cálculo numérico (CMT, |S21| < -10 dB):"]
+            linhas += [f"  centro {c / 1e9:.3f} GHz, {dbm:.1f} dB" for _, _, c, dbm in numericas]
+        linhas += ["", self._banda, "", self._modelo, "", "CMT e ABCD desprezam descontinuidades e radiação;",
+                   "εeff vem de fórmula fechada (o livro usa EM).",
+                   "As fórmulas analíticas usam o modelo sem perdas e sem dispersão."]
         self.saida.escrever("\n".join(linhas))
 
     def _texto_personalizado(self, v, p, w, ee_med, f, s21, avisos):
@@ -257,8 +278,37 @@ class AbaEBG(AbaBase):
             linhas.append(f"\n⚠ Largura mínima {w.min():.3f} mm: verificar fabricabilidade.")
         for a in avisos:
             linhas.append("⚠ " + a)
-        linhas += ["", self._banda, "", "Curva pontilhada em |S11|: estimativa de Fourier,", "válida para baixa refletividade."]
+        linhas += ["", self._banda, "", self._modelo, "",
+                   "Curva pontilhada em |S11|: estimativa de Fourier,", "válida para baixa refletividade."]
         self.saida.escrever("\n".join(linhas))
+
+    def _grafico_linha_ref(self, ax, f, sub, zref):
+        """Atenuação e εeff da linha de referência (mostra o efeito das opções do modelo)."""
+        w = sintese(zref, sub)
+        perdas, dispersivo = self.modelo_fis.get()
+        _, ee, alfa = (x[:, 0] for x in parametros_linha(w, sub, f, True, True))
+        ax.plot(f / 1e9, alfa * NP_DB / 100, label="α total" + ("" if perdas else " (desligada)"))
+        ax.set_ylabel("α [dB/cm]")
+        ax.set_xlabel("f [GHz]")
+        ax2 = ax.twinx()
+        ax2.plot(f / 1e9, ee, color="C1", label="εeff(f)")
+        ax2.axhline(float(analise(w, sub)[1]), color="C1", ls=":", lw=1)
+        ax2.set_ylabel("εeff", color="C1")
+        ax.set_title(f"Linha {zref:g} Ω (W = {w:.3f} mm)" + ("" if dispersivo else ": εeff(f) só informativo"),
+                     fontsize=9)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=7, loc="upper left")
+
+    def _texto_modelo(self, f, s11, s21, sub):
+        txt = self.modelo_fis.descrever(sub)
+        if self.modelo_fis.get()[0]:
+            passa = abcd.db(s21) > -3
+            if passa.any():
+                # potência dissipada (não refletida nem transmitida)
+                dis = -10 * np.log10(np.abs(s11[passa]) ** 2 + np.abs(s21[passa]) ** 2)
+                txt += (f"\nPerda dissipativa na banda passante: {dis.min():.2f} a {dis.max():.2f} dB "
+                        f"(em {f[passa][np.argmin(dis)] / 1e9:.2f} e {f[passa][np.argmax(dis)] / 1e9:.2f} GHz)")
+        return txt
 
     def _furos(self, v, d):
         self._ultimo = None

@@ -5,7 +5,7 @@ from ..core import abcd
 from ..core import carga_capacitiva as cc
 from ..geometria import construtores
 from .aba_substrato import PREDEFINIDOS
-from .comum import AbaBase, AreaTexto, Formulario, protegido
+from .comum import AbaBase, AreaTexto, Formulario, OpcoesModelo, protegido
 from .previa import PreviaEstrutura
 
 MODOS = ("fc, ZB, fs", "Fase/célula, ZB, fs")
@@ -34,6 +34,8 @@ class AbaCarga(AbaBase):
             ("fmax", "f máx (gráficos)", 25.0, "GHz"),
         ], titulo="Implementação microstrip")
         self.fis.pack(fill="x", pady=(8, 0))
+        self.modelo_fis = OpcoesModelo(self.painel)
+        self.modelo_fis.pack(fill="x", pady=(8, 0))
         self.botoes(("Calcular", self.calcular), ("Exemplo Fig. 2.34", self.exemplo),
                     ("Enviar p/ exportação", self.publicar), ("Exportar S2P", self.exportar_s2p))
         self.saida = AreaTexto(self.painel, 16)
@@ -87,9 +89,10 @@ class AbaCarga(AbaBase):
         self.previa.mostrar(lay)
         f = np.linspace(0.01, fv["fmax"], 1500) * 1e9
 
-        md = cc.celula_distribuida(f, p)
+        perdas, dispersivo = self.modelo_fis.get()
+        md = cc.celula_microstrip(f, p, geo, self.estado.substrato, perdas, dispersivo)
         mc = cc.celula_concentrada(f, p)
-        _, bl_d = abcd.dispersao(md)
+        al_d, bl_d = abcd.dispersao(md)
         _, bl_c = abcd.dispersao(mc)
         zb_d, _ = abcd.impedancia_bloch(md)
         zb_c, _ = abcd.impedancia_bloch(mc)
@@ -97,7 +100,7 @@ class AbaCarga(AbaBase):
         self._ultimo = (f, s, fv["zporta"], v, p)
         self.estado.publicar_resultado("carga_capacitiva", f, s, fv["zporta"])
 
-        ax = self.grafico.eixos(2, 2)
+        ax = self.grafico.eixos(2, 3)
         ax[0].plot(bl_d / np.pi, f / 1e9, label="Distribuído (2.116)")
         ax[0].plot(bl_c / np.pi, f / 1e9, "--", label="Concentrado (Fig. 2.27b)")
         ax[0].plot(np.clip(2 * f * np.sqrt(p.L * p.C), 0, None), f / 1e9, ":", color="gray",
@@ -121,6 +124,14 @@ class AbaCarga(AbaBase):
         ax[3].plot(f[passa] / 1e9, np.rad2deg(bl_c[passa]), "--", label="Concentrado")
         ax[3].set_ylabel("Fase por célula [°]")
         ax[3].set_title("Defasagem por célula (1ª banda)", fontsize=9)
+        tau = abcd.atraso_grupo(f, s[:, 1, 0]) * 1e9
+        ax[4].plot(f[passa] / 1e9, tau[passa], label=f"{v['n']} células")
+        ax[4].set_ylabel("τg [ns]")
+        ax[4].set_title("Atraso de grupo (1ª banda)", fontsize=9)
+        ax[5].plot(f[passa] / 1e9, al_d[passa] * 20 / np.log(10), label="αl (Bloch)")
+        ax[5].set_ylabel("Atenuação por célula [dB]")
+        ax[5].set_title("Perdas por célula (1ª banda)" if perdas else "αl na 1ª banda (sem perdas: 0)",
+                        fontsize=9)
         for a in ax:
             a.grid(True, alpha=0.3)
             a.legend(fontsize=7)
@@ -130,6 +141,7 @@ class AbaCarga(AbaBase):
         self.ver_resultados()
 
         self.saida.escrever(
+            f"{self.modelo_fis.descrever(self.estado.substrato)}\n"
             f"{abcd.descrever_banda(f, s)}\n(regra: ZB estável até ~0,55·fc = {0.55 * p.fc / 1e9:.2f} GHz)\n\n"
             "Elementos por célula:\n"
             f"  L   = {p.L * 1e9:.4f} nH\n  C   = {p.C * 1e12:.4f} pF\n  Cls = {p.Cls * 1e12:.4f} pF\n"
