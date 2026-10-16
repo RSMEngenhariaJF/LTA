@@ -22,6 +22,7 @@ from .aba_exportar import AbaExportar
 from .aba_extracao import AbaExtracao
 from .aba_filtros import AbaFiltros
 from .aba_floquet import AbaFloquet
+from .aba_linhas import AbaLinhas
 from .aba_miw import AbaMIW
 from .aba_multibanda import AbaMultibanda
 from .aba_nltl import AbaNLTL
@@ -32,6 +33,7 @@ from .comum import PASTA_SAIDAS, RAIZ, Estado
 
 # (nome do grupo no menu, [ferramentas])
 GRUPOS = [
+    ("Cap. 0 – Linhas convencionais", [AbaLinhas]),
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
     ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos, AbaFiltros]),
@@ -44,7 +46,7 @@ GERAIS = [AbaSubstrato, AbaExportar]
 # lista plana mantida para scripts e testes (ordem de criação)
 ABAS = [AbaSubstrato] + [c for _, cs in GRUPOS for c in cs] + [AbaExportar]
 
-VERSAO = "1.7"
+VERSAO = "1.8"
 
 
 class Aplicacao:

@@ -850,6 +850,60 @@ class NaoFoster(unittest.TestCase):
         self.assertAlmostEqual(nf.capacitor_para_eps(31.5, 106e-12, 0.1, lin.eps_ef), 6.1e-12, delta=1e-18)
 
 
+class LinhasConvencionais(unittest.TestCase):
+    def test_stripline_pozar(self):
+        # Pozar, Microwave Engineering, ex. 3.5: b = 3,16 mm, εr = 2,2, 50 Ω -> W ≈ 2,66 mm (fórmula ~1%)
+        from lta.core import linhas_planares as lp
+        w = lp.sintetizar("Stripline", 50, Substrato(2.2, 1.58), b=3.16)
+        self.assertAlmostEqual(w, 2.66, delta=0.06)
+
+    def test_limites_coplanares(self):
+        from lta.core import linhas_planares as lp
+        self.assertAlmostEqual(lp.cpw(1, 0.5, 1e5, 1.0)[0], 30 * np.pi * 1.27920, delta=0.05)   # CPW no ar, k = 0,5
+        self.assertAlmostEqual(lp.cpw(0.5, 0.2, 1000, 10.2)[1], 5.6, places=4)                  # εeff → (εr+1)/2
+        np.testing.assert_allclose(lp.gcpw(0.5, 0.2, 100, 10.2), lp.cpw(0.5, 0.2, 100, 10.2), rtol=1e-4)
+        z1, e = lp.cpw(1, 0.5, 1e5, 4.0)
+        z2, _ = lp.cps(1, 0.5, 1e5, 4.0)
+        self.assertAlmostEqual(z1 * z2 / (ms.ETA0**2 / (4 * e)), 1, delta=0.002)              # Booker (duais)
+
+    def test_sintese_ida_e_volta(self):
+        from lta.core import linhas_planares as lp
+        sub = Substrato(3.55, 0.813)
+        for tipo, z, g, b in (("Microstrip", 50, 0, 0), ("Stripline", 50, 0, 1.6), ("CPW", 50, 0.2, 0),
+                              ("CPW com terra (GCPW)", 50, 0.2, 0), ("Coplanar strips (CPS)", 100, 0.2, 0)):
+            w = lp.sintetizar(tipo, z, sub, g=g, b=b)
+            self.assertAlmostEqual(lp.analisar(lp.Geometria(tipo, w, g, b), sub)[0], z, places=4, msg=tipo)
+
+    def test_elementos(self):
+        from lta.core import linhas_planares as lp
+        sub = Substrato(3.55, 0.813, tand=0.0)
+        geo = lp.Geometria("Microstrip", lp.sintetizar("Microstrip", 50, sub))
+        f = np.array([2.45e9])
+        comp = lp.comprimento_eletrico(geo, sub, 2.45e9, 90)
+        s_ab = abcd.abcd_para_s(lp.abcd_stub(f, geo, sub, comp, perdas=False), 50)
+        s_cc = abcd.abcd_para_s(lp.abcd_stub(f, geo, sub, comp, curto=True, perdas=False), 50)
+        self.assertLess(abcd.db(s_ab[0, 1, 0]), -60)                  # stub λ/4 aberto: curto em f0
+        self.assertAlmostEqual(abs(s_cc[0, 1, 0]), 1, places=9)       # stub λ/4 em curto: aberto em f0
+        geo_t = lp.Geometria("Microstrip", lp.sintetizar("Microstrip", np.sqrt(50 * 100), sub))
+        m = lp.abcd_trecho(f, geo_t, sub, lp.comprimento_eletrico(geo_t, sub, 2.45e9, 90), perdas=False)
+        self.assertLess(abcd.db(abcd.abcd_para_s2(m, 50, 100)[0, 0, 0]), -60)   # transformador λ/4 casado
+        mm = lp.abcd_trecho(np.linspace(1e9, 3e9, 5), geo, sub, 10)
+        np.testing.assert_allclose(abcd.abcd_para_s2(mm, 50, 50), abcd.abcd_para_s(mm, 50), atol=1e-12)
+
+    def test_layout_sem_terra(self):
+        from lta.geometria import construtores as k
+        sub = Substrato(3.55, 0.813)
+        with tempfile.TemporaryDirectory() as d:
+            for tipo, terra in (("CPW", False), ("CPW com terra (GCPW)", True), ("Coplanar strips (CPS)", False)):
+                lay = k.linha_convencional(tipo, "Trecho de linha", dict(w=1.2, g=0.2, comp=20, largura_terra=3,
+                                                                          raio_via=0.15, passo_vias=1.2), sub,
+                                           nome=f"l{int(terra)}{tipo[0]}")
+                arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=10))
+                self.assertEqual(any(a.name.endswith("_terra.gbl") for a in arqs), terra, tipo)
+                dxf = (Path(d) / f"{lay.nome}.dxf").read_text()
+                self.assertEqual("POLYLINE\n8\nTERRA\n" in dxf, terra, tipo)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)

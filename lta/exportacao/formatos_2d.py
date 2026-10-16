@@ -44,7 +44,8 @@ def dxf(layout, caminho):
 
     for p in layout.topo:
         linhas += poli(p, "TOPO_COBRE")
-    linhas += poli(_retangulo(*layout.terra), "TERRA")
+    if not layout.sem_terra:
+        linhas += poli(_retangulo(*layout.terra), "TERRA")
     linhas += poli(_retangulo(*layout.placa), "PLACA")
     for p in layout.fendas_terra:
         linhas += poli(p, "TERRA_FUROS")
@@ -103,8 +104,9 @@ def gerber(layout, caminho_base):
         for p in layout.fendas_terra:
             terra += _gerber_regiao(p)
     terra.append("M02*")
-    arqs.append(base.parent / f"{base.name}_terra.gbl")
-    arqs[-1].write_text("\n".join(terra) + "\n", encoding="ascii")
+    if not layout.sem_terra:
+        arqs.append(base.parent / f"{base.name}_terra.gbl")
+        arqs[-1].write_text("\n".join(terra) + "\n", encoding="ascii")
 
     cont = _gerber_cab("Profile,NP")
     cont += ["%ADD10C,0.100000*%", "D10*"]
@@ -183,11 +185,12 @@ def kicad(layout, caminho):
     s.append(f'  (gr_rect (start {x0 + _ORIGEM_KICAD[0]:.6f} {-y1 + _ORIGEM_KICAD[1]:.6f}) '
              f'(end {x1 + _ORIGEM_KICAD[0]:.6f} {-y0 + _ORIGEM_KICAD[1]:.6f}) '
              f'(layer "Edge.Cuts") (width 0.1) (fill none) (tstamp {uuid.uuid4()}))')
-    # Plano de terra como zona (preenchida pelo KiCad: tecla B)
-    s.append(f'  (zone (net 0) (net_name "") (layer "B.Cu") (tstamp {uuid.uuid4()}) (hatch edge 0.508)'
-             " (connect_pads yes (clearance 0)) (min_thickness 0.1) (filled_areas_thickness no)"
-             " (fill yes (thermal_gap 0.508) (thermal_bridge_width 0.508))"
-             f" (polygon {_kpts(_retangulo(*layout.terra))}))")
+    # Plano de terra como zona (preenchida pelo KiCad: tecla B); ausente em CPW/CPS
+    if not layout.sem_terra:
+        s.append(f'  (zone (net 0) (net_name "") (layer "B.Cu") (tstamp {uuid.uuid4()}) (hatch edge 0.508)'
+                 " (connect_pads yes (clearance 0)) (min_thickness 0.1) (filled_areas_thickness no)"
+                 " (fill yes (thermal_gap 0.508) (thermal_bridge_width 0.508))"
+                 f" (polygon {_kpts(_retangulo(*layout.terra))}))")
     # Furos no terra: áreas de exclusão de preenchimento
     for cx, cy, r in layout.vias:
         d = 2 * r
@@ -260,7 +263,8 @@ def gds(layout, caminho, nome_celula=None):
 
     for p in layout.topo:
         out += boundary(p, CAMADAS_GDS["TOPO_COBRE"])
-    out += boundary(_retangulo(*layout.terra), CAMADAS_GDS["TERRA"])
+    if not layout.sem_terra:
+        out += boundary(_retangulo(*layout.terra), CAMADAS_GDS["TERRA"])
     out += boundary(_retangulo(*layout.placa), CAMADAS_GDS["PLACA"])
     for cx, cy, r in layout.furos_terra:
         out += boundary(_circulo(cx, cy, r), CAMADAS_GDS["TERRA_FUROS"])

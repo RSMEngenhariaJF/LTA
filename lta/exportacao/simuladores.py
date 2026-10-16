@@ -123,7 +123,8 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
         a(f'    attr("{nm}", "vacuum", "(160 160 160)"))')
     a("")
     a('oBnd = oDesign.GetModule("BoundarySetup")')
-    a(f'oBnd.AssignPerfectE(["NAME:PEC_Cobre", "Objects:=", {trilhas + ["Terra"] + vias!r}, '
+    pec = trilhas + ([] if layout.sem_terra else ["Terra"]) + vias     # CPW/CPS: sem terra inferior
+    a(f'oBnd.AssignPerfectE(["NAME:PEC_Cobre", "Objects:=", {pec!r}, '
       '"InfGroundPlane:=", False])')
     a("")
     a("# Radiacao nas faces laterais (y) e superior (z) da caixa de ar")
@@ -213,7 +214,8 @@ def cst(layout, caminho, f_min_ghz, f_max_ghz):
     a("    .Create")
     a("End With")
     a("With Brick")
-    a('    .Reset : .Name "Terra" : .Component "lta" : .Material "PEC"')
+    material_terra = "Vacuum" if layout.sem_terra else "PEC"        # CPW/CPS: sem terra inferior
+    a(f'    .Reset : .Name "Terra" : .Component "lta" : .Material "{material_terra}"')
     a(f'    .Xrange "{_fmt(x0)}", "{_fmt(x1)}" : .Yrange "{_fmt(y0)}", "{_fmt(y1)}" : .Zrange "-t", "0"')
     a("    .Create")
     a("End With")

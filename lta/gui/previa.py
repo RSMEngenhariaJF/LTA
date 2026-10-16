@@ -286,12 +286,29 @@ class PreviaEstrutura(ttk.Frame):
         aberturas = [(cy - np.sqrt(r**2 - (x - cx) ** 2), cy + np.sqrt(r**2 - (x - cx) ** 2))
                      for cx, cy, r in lay.furos_terra if abs(x - cx) < r]
         aberturas += [iv for p in lay.fendas_terra for iv in intervalos_em_x(p, x)]
-        limites = [y0] + [v for a in sorted(aberturas) for v in a] + [y1]
-        for a, b in zip(limites[::2], limites[1::2]):
-            ax.add_patch(Rectangle((a, -t_vis), b - a, t_vis, fc=COR_COBRE, ec=COR_BORDA, lw=0.5))
-        if w > 0:
-            ax.add_patch(Rectangle((-w / 2, h), w, t_vis, fc=COR_COBRE, ec=COR_BORDA, lw=0.5))
-            _desenhar_cota(ax, (-w / 2, h + t_vis + 0.25 * h, w / 2, h + t_vis + 0.25 * h, f"W = {w:.3f}"))
+        if not lay.sem_terra:
+            limites = [y0] + [v for a in sorted(aberturas) for v in a] + [y1]
+            for a, b in zip(limites[::2], limites[1::2]):
+                ax.add_patch(Rectangle((a, -t_vis), b - a, t_vis, fc=COR_COBRE, ec=COR_BORDA, lw=0.5))
+        # cobre do topo: todos os polígonos que cruzam o corte (trilha, planos coplanares, dedos...)
+        trechos = sorted(iv for p in lay.topo for iv in intervalos_em_x(p, x))
+        unidos = []
+        for a, b in trechos:
+            if unidos and a <= unidos[-1][1] + 1e-9:
+                unidos[-1][1] = max(unidos[-1][1], b)
+            else:
+                unidos.append([a, b])
+        if not unidos and w > 0:
+            unidos = [[-w / 2, w / 2]]
+        for a, b in unidos:
+            ax.add_patch(Rectangle((a, h), b - a, t_vis, fc=COR_COBRE, ec=COR_BORDA, lw=0.5))
+        central = [iv for iv in unidos if iv[0] <= 0 <= iv[1]]
+        if central:
+            a, b = central[0]
+            _desenhar_cota(ax, (a, h + t_vis + 0.25 * h, b, h + t_vis + 0.25 * h, f"W = {b - a:.3f}"))
+        for cx, cy, r in lay.vias:
+            if abs(x - cx) < r:
+                ax.add_patch(Rectangle((cy - r, 0), 2 * r, h, fc="#555", ec="k", lw=0.5))
         _desenhar_cota(ax, (y1 * 0.92, 0, y1 * 0.92, h, f"h = {h:g}"))
         ax.text(y0 + 0.03 * (y1 - y0), h / 2, f"εr = {s.er:g}", fontsize=8, va="center")
         for a, b in aberturas:

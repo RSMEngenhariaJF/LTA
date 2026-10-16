@@ -38,6 +38,7 @@ class Layout:
     perfil: tuple = None                              # (x, w) contorno da trilha
     fendas_terra: list = field(default_factory=list)  # polígonos (N,2) [mm] removidos do terra
     vias: list = field(default_factory=list)          # (cx, cy, r) [mm], furos metalizados topo-terra
+    sem_terra: bool = False                           # CPW/CPS: sem plano de terra na face inferior
 
     def largura_em(self, x):
         """Largura da trilha na posição x (0 se fora da trilha)."""

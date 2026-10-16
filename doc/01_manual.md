@@ -37,6 +37,7 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | Aba | Função | Seções do livro |
 |---|---|---|
 | **Substrato** | εr, h, t, tan δ, σ e rugosidade usados por todas as abas; calculadora microstrip Z0 ↔ W com εeff(f), Z0(f), δ, αc e αd numa frequência | cap. 1 (eqs. 1.68, 1.79, 1.83, 1.90); Hammerstad-Jensen (1980) |
+| **Linhas de transmissão convencionais** (cap. 0) | Microstrip, stripline, CPW, CPW com terra (GCPW) e coplanar strips (CPS): síntese Z0 → dimensões e análise; trecho de linha, stubs em aberto/curto e transformador λ/4 (microstrip); λg, perdas, S e layout | cap. 1 (eqs. 1.68, 1.90); Cohn (1954); Simons (2001) |
 | **Célula ABCD** | Dispersão (βl, αl), impedância de Bloch e S de N células para topologias T, Π, L. O ramo série é Ls+Cs e o paralelo é Cp‖Lp, o que cobre linhas RH, LH e CRLH | 2.3 (eqs. 2.21, 2.26, 2.40) |
 | **Carga capacitiva** | Projeto de linha slow-wave: (fc, ZB, fs) ou (fase em f0, ZB, fs) → L, C, Cls → geometria microstrip com patches; atraso de grupo e atenuação por célula | 2.5.2 (eqs. 2.116–2.126) |
 | **EBG / Modos acoplados** | Perfil Z0(z) senoidal ou quadrado → W(z) → S por CMT numérico, cascata ABCD e solução analítica; furos no plano de terra (geometria e Bragg); atraso de grupo | 2.4 e 2.5.1 (eqs. 2.48–2.105) |
@@ -58,6 +59,28 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
+
+### Capítulo 0: linhas de transmissão convencionais
+
+A primeira ferramenta do menu projeta as linhas planares comuns, que são a base das linhas artificiais ([linhas_planares.py](../lta/core/linhas_planares.py)).
+
+- **Modelos (quase-estáticos, metal de espessura nula):**
+  - microstrip de Hammerstad e Jensen, com dispersão e perdas;
+  - stripline centrada de Cohn, exata por transformação conforme;
+  - CPW, GCPW e CPS em substrato de espessura h, de Simons (integrais elípticas).
+- **Síntese:** a largura (W, ou a fita central S, ou as fitas da CPS) é obtida por bisseção, com a fenda G (ou a separação S da CPS) e a distância b da stripline fixas.
+- **Elementos:**
+  - trecho de linha com o comprimento elétrico pedido em f0;
+  - stub em aberto ou em curto em derivação: Yin = tanh(γl)/Z0 ou 1/(Z0·tanh γl);
+  - transformador λ/4 com Zt = √(Z0·Z2), simulado com portas de impedâncias diferentes.
+  - Stubs e transformador estão disponíveis em microstrip.
+- **Perdas:** dielétrico pela eq. 1.68 em todas as linhas quase-TEM; condutor (eq. 1.90/Pucel) só na microstrip.
+- **Layout e exportação:**
+  - microstrip (trecho, stub com pad e via, transformador em degraus);
+  - CPW e CPS sem plano de terra inferior: os arquivos 2D omitem a camada TERRA, e no HFSS/CST o terra fica inerte. As portas de onda precisam de ajuste, como indicado no LEIA-ME;
+  - GCPW com cerca de vias opcional.
+  - A stripline (três camadas) tem só análise.
+- **Pré-visualização:** o corte transversal passa a mostrar todo o cobre do topo que cruza a seção (planos coplanares, fitas) e as vias.
 
 ### Banda larga: redes passa-tudo e banda útil
 
@@ -293,6 +316,12 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | Item | Livro | Ferramenta |
 |---|---|---|
 | W de 50 Ω em RO3010 (h = 1,27 mm) | 1,2 mm | 1,186 mm |
+| Stripline 50 Ω, b = 3,16 mm, εr = 2,2 (Pozar, ex. 3.5) | W ≈ 2,66 mm (fórmula aproximada) | 2,62 mm (Cohn, exata) |
+| CPW no ar, k = 0,5 | 30π·K(k')/K(k) = 120,6 Ω | 120,6 Ω |
+| CPW em substrato muito espesso: εeff | (εr + 1)/2 | idem (10⁻⁵) |
+| GCPW com h → ∞ | igual à CPW | igual (10⁻⁴) |
+| CPW × CPS duais (Booker): Z1·Z2 | η0²/(4εeff) | a 0,14% |
+| Stub λ/4 aberto / em curto; transformador λ/4 em f0 | zero / passagem / casado | < −60 dB / 0 dB / < −60 dB |
 | Z0 máx/mín, perfil senoidal \|K1\| = 0,64 cm⁻¹ | 75 / 33,3 Ω | 75,1 / 33,3 Ω |
 | \|S21\|mín senoidal (eq. 2.86) | −49,6 dB | −49,6 dB (analítico e numérico) |
 | Banda rejeitada senoidal (eq. 2.89) | 2,55 GHz | 2,61 GHz |

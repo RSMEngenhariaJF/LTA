@@ -99,6 +99,19 @@ def abcd_para_s(m, z0=50.0):
     return s
 
 
+def abcd_para_s2(m, z01, z02):
+    """ABCD -> S com impedâncias de referência reais diferentes nas portas 1 (z01) e 2 (z02)."""
+    a, b, c, d = m[..., 0, 0], m[..., 0, 1], m[..., 1, 0], m[..., 1, 1]
+    den = a * z02 + b + c * z01 * z02 + d * z01
+    r = 2 * np.sqrt(z01 * z02)
+    s = np.empty(m.shape, dtype=complex)
+    s[..., 0, 0] = (a * z02 + b - c * z01 * z02 - d * z01) / den
+    s[..., 0, 1] = r * (a * d - b * c) / den
+    s[..., 1, 0] = r / den
+    s[..., 1, 1] = (-a * z02 + b - c * z01 * z02 + d * z01) / den
+    return s
+
+
 def s_para_abcd(s, z0=50.0):
     """Conversão S -> ABCD (inversa de abcd_para_s), referência z0 nas duas portas."""
     s11, s12, s21, s22 = s[..., 0, 0], s[..., 0, 1], s[..., 1, 0], s[..., 1, 1]

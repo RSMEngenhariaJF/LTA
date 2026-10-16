@@ -57,6 +57,12 @@ def exportar(layout, pasta, formatos, opcoes):
         gerados += func(layout, pasta / f"{layout.nome}{ext}", opcoes)
     info = "\n".join(f"  {k}: {v}" for k, v in layout.info.items()) or "  (nenhum)"
     leia = pasta / f"{layout.nome}_LEIA-ME.txt"
-    leia.write_text(INSTRUCOES.format(nome=layout.nome, sub=layout.substrato, comp=layout.comprimento,
-                                      larg=layout.largura, info=info), encoding="utf-8")
+    texto = INSTRUCOES.format(nome=layout.nome, sub=layout.substrato, comp=layout.comprimento,
+                              larg=layout.largura, info=info)
+    if layout.sem_terra:
+        texto += ("\nESTRUTURA SEM PLANO DE TERRA INFERIOR (CPW/CPS): os arquivos 2D nao trazem a camada\n"
+                  "TERRA; no HFSS o retangulo 'Terra' nao recebe PEC e no CST e de vacuo. As portas de onda\n"
+                  "foram montadas para microstrip: ajuste a linha de integracao (do condutor central ao\n"
+                  "plano de terra coplanar) antes de simular.\n")
+    leia.write_text(texto, encoding="utf-8")
     return gerados + [leia]

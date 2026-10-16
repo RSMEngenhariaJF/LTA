@@ -250,3 +250,86 @@ def linha_siw(p, comprimento, sub: Substrato, w_porta, w_cunha, l_cunha, l_alim=
                  _cota_h(l_alim, x1, -w_cunha, f"cunha = {l_cunha:.2f}"),
                  _cota_v(x1 - 0.05, w_cunha, f"Wc = {w_cunha:.3f}")]
     return lay
+
+
+def linha_convencional(tipo, elemento, d, sub: Substrato, l_alim=5.0, nome="linha", info=None):
+    """Linhas planares convencionais (cap. 0 / cap. 1 do livro).
+
+    tipo: "Microstrip", "CPW", "CPW com terra (GCPW)" ou "Coplanar strips (CPS)".
+    elemento: "Trecho de linha", "Stub em aberto", "Stub em curto" ou "Transformador λ/4"
+    (stubs e transformador só em microstrip). d: dimensões em mm (chaves w, g, comp, w_stub,
+    comp_stub, w1, w2, wt, raio_via, passo_vias, largura_terra).
+    """
+    info = info or {}
+    if tipo == "Microstrip":
+        if elemento == "Transformador λ/4":
+            x, w = perfil_degraus([(l_alim, d["w1"]), (d["comp"], d["wt"]), (l_alim, d["w2"])])
+            lay = _montar(nome, sub, x, w, d["w1"], 0.0, info=info)
+            lay.portas[-1] = Porta(lay.comprimento, 0.0, d["w2"], "xmax")
+            lay.celula = (l_alim, l_alim + d["comp"])
+            lay.cotas = [_cota_h(l_alim, l_alim + d["comp"], d["wt"], f"λ/4 = {d['comp']:.3f}"),
+                         _cota_v(l_alim + d["comp"] / 2, d["wt"], f"Wt = {d['wt']:.3f}")]
+            return lay
+        if elemento.startswith("Stub"):
+            w, ws, ls = d["w"], d["w_stub"], d["comp_stub"]
+            comp = 2 * l_alim + ws
+            xc = comp / 2
+            topo = [_ret(0.0, -w / 2, comp, w / 2), _ret(xc - ws / 2, w / 2, xc + ws / 2, w / 2 + ls)]
+            vias = []
+            topo_y = w / 2 + ls
+            if elemento == "Stub em curto":
+                lado = max(2 * d["raio_via"] + 0.4, ws)
+                topo.append(_ret(xc - lado / 2, topo_y, xc + lado / 2, topo_y + lado))
+                vias.append((xc, topo_y + lado / 2, d["raio_via"]))
+                topo_y += lado
+            margem = max(5 * sub.h_mm, 2.0)
+            portas = [Porta(0.0, 0.0, w, "xmin"), Porta(comp, 0.0, w, "xmax")]
+            # sem perfil: o corte da pré-visualização passa pelo centro (stub)
+            lay = Layout(nome, sub, topo, (0.0, -w / 2 - margem, comp, topo_y + margem), portas=portas,
+                         info=info, vias=vias)
+            lay.celula = (0.0, comp)
+            lay.cotas = [(xc + ws, w / 2, xc + ws, w / 2 + ls, f"stub = {ls:.3f}"),
+                         _cota_h(xc - ws / 2, xc + ws / 2, -w, f"Ws = {ws:.3f}"),
+                         _cota_v(0.5, w, f"W = {w:.3f}")]
+            return lay
+        x = np.array([0.0, d["comp"]])
+        ws = np.array([d["w"], d["w"]])
+        lay = _montar(nome, sub, x, ws, d["w"], l_alim, info=info)
+        lay.celula = (l_alim, l_alim + min(d["comp"], 6 * d["w"] + 5))
+        lay.cotas = [_cota_v(l_alim + 1, d["w"], f"W = {d['w']:.3f}")]
+        return lay
+    if elemento != "Trecho de linha":
+        raise ValueError("Stubs e transformador estão disponíveis só em microstrip.")
+    s, g = d["w"], d["g"]
+    comp = 2 * l_alim + d["comp"]
+    wt = d["largura_terra"]
+    if tipo == "Coplanar strips (CPS)":
+        topo = [_ret(0.0, g / 2, comp, g / 2 + s), _ret(0.0, -g / 2 - s, comp, -g / 2)]
+        borda = g / 2 + s
+        portas = [Porta(0.0, 0.0, g + 2 * s, "xmin"), Porta(comp, 0.0, g + 2 * s, "xmax")]
+        perfil = (np.array([0.0, comp]), np.array([g + 2 * s, g + 2 * s]))
+        cotas = [_cota_v(l_alim + 1, g, f"S = {g:.3f}"), _cota_h(l_alim, l_alim + 2, g / 2 + s + 0.3,
+                                                                f"W = {s:.3f}")]
+        vias = []
+    else:
+        topo = [_ret(0.0, -s / 2, comp, s / 2), _ret(0.0, s / 2 + g, comp, s / 2 + g + wt),
+                _ret(0.0, -s / 2 - g - wt, comp, -s / 2 - g)]
+        borda = s / 2 + g + wt
+        portas = [Porta(0.0, 0.0, s, "xmin"), Porta(comp, 0.0, s, "xmax")]
+        perfil = (np.array([0.0, comp]), np.array([s, s]))
+        cotas = [_cota_v(l_alim + 1, s, f"S = {s:.3f}"),
+                 _cota_h(l_alim + 2, l_alim + 2 + g, s / 2 + g + 0.3, f"G = {g:.3f}")]
+        vias = []
+        if tipo == "CPW com terra (GCPW)" and d.get("passo_vias", 0) > 0:
+            r = d["raio_via"]
+            y = s / 2 + g + max(r + 0.2, 0.5)
+            if y + r > borda:
+                raise ValueError("Plano lateral estreito demais para a cerca de vias.")
+            xs = np.arange(r + 0.2, comp - r - 0.2, d["passo_vias"])
+            vias = [(xv, sy * y, r) for xv in xs for sy in (-1, 1)]
+    margem = max(3 * sub.h_mm, 1.0)
+    lay = Layout(nome, sub, topo, (0.0, -borda - margem, comp, borda + margem), portas=portas, info=info,
+                 perfil=perfil, vias=vias, sem_terra=tipo in ("CPW", "Coplanar strips (CPS)"))
+    lay.celula = (l_alim, l_alim + min(d["comp"], 8 * (s + 2 * g) + 3))
+    lay.cotas = cotas
+    return lay
