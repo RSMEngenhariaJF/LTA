@@ -14,6 +14,7 @@ from .aba_carga import AbaCarga
 from .aba_cl_loaded import AbaCLLoaded
 from .aba_celula import AbaCelula
 from .aba_crlh import AbaCRLH
+from .aba_diferencial import AbaDiferencial
 from .aba_dispositivos import AbaDispositivos
 from .aba_csrr import AbaCSRR
 from .aba_ebg import AbaEBG
@@ -21,9 +22,11 @@ from .aba_exportar import AbaExportar
 from .aba_extracao import AbaExtracao
 from .aba_filtros import AbaFiltros
 from .aba_floquet import AbaFloquet
+from .aba_miw import AbaMIW
 from .aba_multibanda import AbaMultibanda
 from .aba_nltl import AbaNLTL
 from .aba_sintonia import AbaSintonia
+from .aba_siw import AbaNaoFoster, AbaSIW
 from .aba_substrato import AbaSubstrato
 from .comum import PASTA_SAIDAS, RAIZ, Estado
 
@@ -33,6 +36,7 @@ GRUPOS = [
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
     ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos, AbaFiltros]),
     ("Cap. 5 – Sintonizáveis e não lineares", [AbaSintonia, AbaNLTL]),
+    ("Cap. 6 – Outras linhas avançadas", [AbaDiferencial, AbaMIW, AbaSIW, AbaNaoFoster]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]
@@ -40,7 +44,7 @@ GERAIS = [AbaSubstrato, AbaExportar]
 # lista plana mantida para scripts e testes (ordem de criação)
 ABAS = [AbaSubstrato] + [c for _, cs in GRUPOS for c in cs] + [AbaExportar]
 
-VERSAO = "1.6"
+VERSAO = "1.7"
 
 
 class Aplicacao:

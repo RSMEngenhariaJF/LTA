@@ -749,6 +749,107 @@ class NLTL(unittest.TestCase):
         self.assertTrue(21 <= otimo[0] <= 39)                                             # livro: 27
 
 
+class Diferencial(unittest.TestCase):
+    def test_tabela_6_1(self):
+        from lta.core import diferencial as df
+        n, p = 1e-9, 1e-12
+        for nome, (f0, le, ce, lc, cc, cr, fbw) in df.TABELA_6_1.items():
+            el = (le * n, ce * p, lc * n, cc * p, cr * p)
+            self.assertAlmostEqual(df.zero_comum(*el[:4]) / (f0 * 1e9), 1, delta=0.06, msg=nome)   # eq. 6.11
+            _, _, b = df.banda_rejeicao(*el)
+            self.assertAlmostEqual(100 * b, fbw, delta=2.1, msg=nome)        # Tabela 6.1 (máx. 2,03 pontos)
+
+    def test_filtro_converge_e_modo_diferencial(self):
+        from lta.core import diferencial as df
+        n, p = 1e-9, 1e-12
+        el = (9.0 * n, 0.8 * p, 0.45 * n, 4.8 * p, 0.09 * p)
+        fa, fb, fbw = df.banda_rejeicao(*el)
+        f = np.linspace(2.4e9, 3.6e9, 2401)
+        fz = df.zero_comum(*el[:4])
+        bw = []
+        for k in (3, 10):
+            rej = abcd.db(df.s_comum(f, k, *el)[:, 1, 0]) < -20
+            i = np.argmin(abs(f - fz))
+            a, b = i, i
+            while rej[a - 1]:
+                a -= 1
+            while rej[b + 1]:
+                b += 1
+            bw.append((f[b] - f[a]) / np.sqrt(f[a] * f[b]))
+        self.assertLess(bw[0], bw[1])
+        self.assertAlmostEqual(bw[1], fbw, delta=0.01)            # muitas células -> banda máxima
+        lo, co = df.linha_impar(50, 6.8, 7.7)
+        sdd = df.s_diferencial(f, 10, lo, co)
+        self.assertGreater(abcd.db(sdd[(f > fa) & (f < fb), 1, 0]).min(), -0.5)   # diferencial passa
+
+
+class MIW(unittest.TestCase):
+    def test_dispersao_circuito_e_dualidade(self):
+        from lta.core import miw
+        f0, k, l_res = 2.45e9, -0.0256, 10e-9
+        c_res = 1 / ((2 * np.pi * f0) ** 2 * l_res)
+        f = np.linspace(2.3e9, 2.6e9, 3001)
+        al, bl = abcd.dispersao(miw.abcd_miw(f, l_res, c_res, k * l_res))
+        ok = al < 1e-9
+        np.testing.assert_allclose(miw.frequencia(bl[ok], f0, k), f[ok], rtol=1e-9)      # eq. 6.1
+        fa, fb, fbw = miw.bordas(f0, k)
+        self.assertAlmostEqual(100 * fbw, 5.13, delta=0.01)                              # livro, p. 429
+        kc = miw.fator_acoplamento(cm_sobre_cc=0.0256)                                    # EIW dual (eq. 6.4)
+        self.assertEqual(miw.bordas(f0, kc)[:2], (fa, fb))
+        self.assertGreater(miw.frequencia(0.1, f0, k), miw.frequencia(3.0, f0, k))       # regressiva
+
+    def test_atraso_e_ecos(self):
+        from lta.core import miw
+        f0, k, l_res = 2.45e9, -0.0256, 10e-9
+        c_res = 1 / ((2 * np.pi * f0) ** 2 * l_res)
+        fz = np.linspace(2.40e9, 2.50e9, 20001)
+        cel = miw.abcd_miw(fz, l_res, c_res, k * l_res)
+        zb = abs(abcd.impedancia_bloch(miw.abcd_miw(np.array([f0]), l_res, c_res, k * l_res))[0][0])
+        s = abcd.abcd_para_s(abcd.potencia(cel, 6), zb)
+        tg = abcd.atraso_grupo(fz, s[:, 1, 0])[np.argmin(abs(fz - f0))]
+        self.assertAlmostEqual(tg / (6 / (2 * np.pi * f0 * abs(k))), 1, delta=1e-3)     # eq. 6.9 (ida)
+        f = np.linspace(1e6, 5e9, 80000)
+        t, env = miw.resposta_pulso(f, miw.s11_etiqueta(f, l_res, c_res, k * l_res, 10, "11", 1.0, zb), f0, 15e-9)
+        t_bit = 10 * 2 / (2 * np.pi * f0 * abs(k))
+        for m in (1, 2):
+            janela = (t > (m - 0.3) * t_bit) & (t < (m + 0.3) * t_bit)
+            tp = t[janela][np.argmax(env[janela])]
+            self.assertAlmostEqual(tp / (m * t_bit), 1, delta=0.08)                       # ecos dos bits
+
+
+class SIW(unittest.TestCase):
+    def test_projeto(self):
+        from lta.core import siw
+        p = siw.projeto(6e9, 3.55, 0.8e-3)
+        self.assertAlmostEqual(p.a, ms.C0 / (2 * 6e9 * np.sqrt(3.55)), places=12)        # eq. 6.34
+        a_dw = p.w - p.d**2 / (0.95 * p.s)                                                  # Deslandes e Wu
+        self.assertAlmostEqual(a_dw / p.a, 1, delta=0.01)
+        self.assertAlmostEqual(p.d_max, 2 * p.a / (5 * np.sqrt(3)), places=12)             # eq. 6.32
+        self.assertEqual(siw.verificacoes(p), [])
+        self.assertTrue(siw.verificacoes(siw.projeto(6e9, 3.55, 0.8e-3, s=2.0e-3)))      # s > 2d
+        f = np.array([5e9, 9e9])
+        s = abcd.abcd_para_s(siw.abcd_siw(f, p, 0.02), abs(p.z_te(np.array([9e9]))[0]))
+        self.assertLess(abcd.db(s[0, 1, 0]), -10)                                           # abaixo do corte
+        self.assertAlmostEqual(abcd.db(s[1, 1, 0]), 0, places=9)
+        self.assertAlmostEqual(p.lambda_g(9e9), 2 * np.pi / np.sqrt((2 * np.pi * 9e9 * np.sqrt(3.55) / ms.C0) ** 2
+                                                                    - (np.pi / p.a) ** 2), places=12)
+
+
+class NaoFoster(unittest.TestCase):
+    def test_linha_enz(self):
+        from lta.core import naofoster as nf
+        lin = nf.LinhaENZ(31.5, 106e-12, 6.1e-12, 0.1)
+        self.assertAlmostEqual(lin.c_ef * 1e12, 45.0, places=6)                            # Fig. 6.32
+        self.assertAlmostEqual(lin.z_ef, 48.3, delta=0.1)
+        self.assertGreater(lin.v_sobre_c, 1)
+        f = np.linspace(1e6, 200e6, 2001)
+        s = abcd.abcd_para_s(lin.abcd(f, 10), lin.z_ef)
+        tg = abcd.atraso_grupo(f, s[:, 1, 0])
+        np.testing.assert_allclose(tg[[100, 1000]] * ms.C0 / 1.0, 1 / lin.v_sobre_c, rtol=0.02)   # superluminal
+        self.assertFalse(nf.LinhaENZ(31.5, 106e-12, 12e-12, 0.1).estavel)                  # C' < 0
+        self.assertAlmostEqual(nf.capacitor_para_eps(31.5, 106e-12, 0.1, lin.eps_ef), 6.1e-12, delta=1e-18)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)
@@ -764,6 +865,8 @@ class Exportacao(unittest.TestCase):
         from lta.core import cl_loaded, crlh
         geo_cl, _ = cl_loaded.projeto(crlh.CelulaCRLH(2.45e-9, 0.5e-12, 3.38e-9, 0.68e-12), ARLON, n_dedos=14)
         lays.append(construtores.linha_cl_loaded(geo_cl, 3, ARLON))
+        from lta.core import siw
+        lays.append(construtores.linha_siw(siw.projeto(10e9, 3.55, 0.6e-3), 20, RO3010, 1.2, 3.0, 4.0))
         with tempfile.TemporaryDirectory() as d:
             for lay in lays:
                 arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=10))

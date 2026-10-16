@@ -51,6 +51,10 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **Filtros passa-faixa e dual-band** (cap. 4) | Protótipos Butterworth/Chebyshev; passa-faixa com inversores e ressonadores; transformação dual-band; filtro periódico com células híbridas de CSRR | 4.2.3 (eqs. 4.38–4.50) |
 | **Linhas sintonizáveis** (cap. 5) | Varactor, HBV e RF-MEMS (pull-in); linha com SRR e varactor (rejeita-faixa sintonizável); CRLH balanceada sintonizável como defasador (FoM) e antena leaky-wave de varredura em frequência fixa | 5.2–5.3 (eqs. 5.1–5.12) |
 | **Linha não linear (NLTL)** (cap. 5) | Sólitons (atraso × amplitude, forma), decomposição de pulsos e multiplicação de frequência por simulação no tempo | 5.4 (eqs. 5.13–5.25) |
+| **Linha diferencial (filtro de modo comum)** (cap. 6) | Par diferencial com CSRR/DS-CSRR: zero do modo comum, banda máxima de rejeição (estrutura infinita), filtro de N células para os modos comum e diferencial, banda × ordem | 6.3 (Fig. 6.12, eq. 6.11, Tabela 6.1; eqs. 3.93–3.97) |
+| **Linhas de atraso MIW/EIW** (cap. 6) | Cadeias de SRR/CSRR acoplados: dispersão, banda, fator de onda lenta; etiqueta RFID por reflectometria (bits, ressonadores) e ecos de um pulso | 6.2 (eqs. 6.1–6.10) |
+| **Guia integrado ao substrato (SIW)** (cap. 6) | Largura, vias e banda monomodo pelo corte do TE10; dispersão, λg, Z_TE, perda dielétrica; layout com vias e transições em cunha | 6.5 (eqs. 6.31–6.34) |
+| **Linha com capacitores negativos** (cap. 6) | Linha ENZ não Foster: C' efetiva, estabilidade, Z, ε equivalente, vp e vg superluminais | 6.4.2 (Fig. 6.32) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -233,6 +237,28 @@ As ferramentas do grupo **Cap. 4 – Aplicações** trabalham no nível de circu
     - A posição exata depende das terminações, que o livro não informa; o padrão aqui é √(L/Co) = 50 Ω.
     - As eficiências não incluem perdas.
 
+### Capítulo 6: outras linhas avançadas
+
+- **Linha diferencial com supressão do modo comum** ([diferencial.py](../lta/core/diferencial.py)):
+  - **Modo comum (parede magnética):** cada linha vê Le e o acoplamento Ce ao meio CSRR (2Lc, Cc/2); os CSRRs vizinhos se acoplam por CR (Fig. 3.44b).
+  - **Zero de transmissão (eq. 6.11):** fz = 1/(2π√(2Lc(Ce + Cc/2))), que confirma a leitura em meio circuito dos valores da Tabela 6.1 (1,495 GHz para a linha de 1,5 GHz).
+  - **Banda máxima de rejeição:** faixa em que nenhum dos dois modos de Bloch da célula de 4 portas propaga (eqs. 3.96–3.97). Reproduz a Tabela 6.1 com no máximo 2,0 pontos de diferença.
+  - **Filtro de N células:** simulado como rede; a banda a −20 dB converge para a máxima, e seis células já ficam perto dela, como diz o livro.
+  - **Modo diferencial (parede elétrica):** o CSRR não é excitado e a linha (Lo, Co pelo período e pela εeff do modo ímpar) passa com perda desprezível.
+- **Linhas de atraso MIW/EIW** ([miw.py](../lta/core/miw.py)):
+  - **Dispersão:** ω = ω0/√(1 + 2κ·cos βl), com κ = M/L (MIW; M < 0 no arranjo coplanar, onda regressiva) ou κ = −CM/Cc (EIW, eq. 6.4). Com |M|/L = CM/Cc as duas bandas coincidem, como prevê a dualidade.
+  - **Velocidade de grupo e atraso:** vg = l·κ·ω0 no centro (eq. 6.8) e atraso de ida e volta 2/(ω0|κ|) por ressonador (eq. 6.9), conferido contra o atraso de grupo da cadeia simulada.
+  - **Etiqueta RFID por reflectometria:** bits = Δτ/τ (eqs. 6.7 e 6.10). Os refletores ficam ao fim de cada segmento de bit, e a aba mostra o envelope do eco de um pulso gaussiano.
+  - **Limitação:** pulsos de banda larga em relação à banda MIW chegam atrasados e geram ecos espúrios. É o compromisso entre bits, banda, comprimento e perdas descrito no livro (p. 429).
+- **SIW** ([siw.py](../lta/core/siw.py)):
+  - **Projeto:** a = c/(2fc√εr) (eq. 6.34), W pela eq. 6.31 (concorda com a fórmula de Deslandes e Wu a 0,6%), d máx. pela eq. 6.32 e s ≤ 2d pela eq. 6.33.
+  - **Modo TE10:** β, λg, Z_TE e αd; trecho de guia como linha equivalente.
+  - **Layout:** fileiras de vias e transições em cunha (dimensões iniciais, a otimizar em EM).
+  - **Fora do escopo:** os filtros e linhas CRLH em SIW (seções 6.5.1–6.5.2) dependem de simulação EM.
+- **Linha com capacitores negativos** ([naofoster.py](../lta/core/naofoster.py)):
+  - **Modelo:** C'_ef = C' − Cn/d (estável se > 0), Z = √(L'/C'_ef) e ε = c²L'C'_ef < 1, com vp = vg > c (conferido pelo atraso de grupo da rede).
+  - **Divergência com o livro:** com os dados da Fig. 6.32, o modelo dá 48,3 Ω e ε = 0,43; o livro cita 50 Ω e 0,3.
+
 ## 3. Exportação
 
 ### 3.1 Layout
@@ -303,6 +329,12 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | NLTL (Fig. 5.40): faixa de atraso dos sólitons | — | 2,174 a 4,216 ps |
 | Sóliton simulado no tempo × eq. 5.24 | — | erro ≤ 1,5% |
 | Multiplicador NLTL (Fig. 5.44): seções do máximo de 3º harmônico, CM = 0,12 pF | 27 | 33 (cai com CM, como no livro) |
+| Linha diferencial: fz (eq. 6.11) com os elementos da Tabela 6.1 | 1,5 / 3 / 6 GHz | 1,495 / 2,906 / 5,931 (CSRR) |
+| Linha diferencial: banda máxima de rejeição (Tabela 6.1) | 30,7 / 26,4 / 20,7 / 32,6 / 29,4 / 23,6% | 32,7 / 26,9 / 21,6 / 32,4 / 28,9 / 21,9% |
+| MIW: banda com \|M\|/L = 0,0256 (p. 429) | 5,13% | 5,13% (circuito = eq. 6.1 a 10⁻¹⁶) |
+| MIW: atraso por ressonador (eq. 6.9) contra a cadeia simulada | — | erro < 0,1% |
+| SIW: eq. 6.31 contra Deslandes e Wu | — | 0,3–0,6% |
+| Linha ENZ (Fig. 6.32): Z e ε equivalente | 50 Ω, 0,3 | 48,3 Ω, 0,43 |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -316,6 +348,7 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 - Linhas em CPW (SRR, OSRR, OCSRR): só a extração está implementada; o projeto geométrico exige um modelo de CPW.
 - Diagrama de Floquet (aba do cap. 2): o desdobramento supõe estrutura de mão direita. Linhas CRLH usam o sinal de β calculado na aba CRLH.
 - Capítulo 4: dispositivos e filtros são simulados com circuitos ideais (inversores ideais, sem perdas nem parasitas). A implementação física desloca as bandas; o livro fecha com EM, extração e ASM. O α/k0 da antena leaky-wave vem de EM.
+- Capítulo 6: as linhas diferenciais usam o modelo sem acoplamento magnético entre linha e CSRR (como no livro); MIW, SIW e ENZ são modelos sem perdas de condutor; a transição do SIW é estimativa inicial.
 - Capítulo 5: o modelo do VLSRR usa só o acoplamento magnético (Fig. 5.8a), que o livro mostra ser dominante. A NLTL não inclui perdas do dispositivo nem da linha, e as terminações padrão são de √(L/Co); a simulação no tempo leva alguns segundos.
 - A geometria da linha com carga capacitiva é **estimativa inicial**, porque não modela os efeitos de degrau e borda do patch. Em εr alto, o patch pode não caber no período: a ferramenta avisa e é preciso reduzir a "Z do patch".
 - EBG com furos no terra: só a geometria e a estimativa de Bragg; a resposta exige simulação EM (eq. 2.51).

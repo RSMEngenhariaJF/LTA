@@ -214,3 +214,39 @@ def linha_cl_loaded(geo, n_celulas, sub: Substrato, l_alim=5.0, nome="crlh_cl_lo
                          f"IDC = {geo.extensao_idc:.3f}"),
                  _cota_v(x0 + 0.3 * p, w, f"W = {w:.3f}")]
     return lay
+
+
+def linha_siw(p, comprimento, sub: Substrato, w_porta, w_cunha, l_cunha, l_alim=5.0, nome="siw", info=None):
+    """SIW (fileiras de vias, Fig. 6.33) com transições em cunha para microstrip nas duas pontas.
+
+    p: ProjetoSIW (lta.core.siw). Medidas em mm, exceto p (em m). A cunha vai de w_porta
+    (linha de 50 Ω) a w_cunha na entrada do guia; suas dimensões são ponto de partida e
+    devem ser otimizadas em EM (livro, p. 465).
+    """
+    w = p.w * 1e3
+    d, s = p.d * 1e3, p.s * 1e3
+    if w_cunha > w or w_porta > w_cunha:
+        raise ValueError("A cunha deve ir da largura da porta até, no máximo, a largura do guia.")
+    x1 = l_alim + l_cunha                 # início do guia
+    x2 = x1 + comprimento
+    total = x2 + l_cunha + l_alim
+    meia_placa = w / 2 + d / 2 + 0.1      # cobre cobre as vias
+    topo = [_ret(0.0, -w_porta / 2, l_alim, w_porta / 2),
+            np.array([[l_alim, -w_porta / 2], [x1, -w_cunha / 2], [x1, w_cunha / 2], [l_alim, w_porta / 2]]),
+            _ret(x1, -meia_placa, x2, meia_placa),
+            np.array([[x2, -w_cunha / 2], [x2 + l_cunha, -w_porta / 2], [x2 + l_cunha, w_porta / 2],
+                      [x2, w_cunha / 2]]),
+            _ret(x2 + l_cunha, -w_porta / 2, total, w_porta / 2)]
+    n_vias = int(np.floor((comprimento - d) / s)) + 1
+    xs = x1 + d / 2 + np.arange(n_vias) * s
+    vias = [(x, y, d / 2) for x in xs for y in (-w / 2, w / 2)]
+    margem = max(5 * sub.h_mm, 2.0)
+    portas = [Porta(0.0, 0.0, w_porta, "xmin"), Porta(total, 0.0, w_porta, "xmax")]
+    lay = Layout(nome, sub, topo, (0.0, -meia_placa - margem, total, meia_placa + margem), portas=portas,
+                 info=info or {}, perfil=(np.array([0.0, total]), np.array([w_porta, w_porta])), vias=vias)
+    lay.celula = (x1 - 0.3 * l_cunha, x1 + 4 * s)
+    lay.cotas = [_cota_v(x1 + 1.5 * s, w, f"W = {w:.3f}"),
+                 _cota_h(xs[0], xs[1] if n_vias > 1 else xs[0] + s, w / 2 + d, f"s = {s:.3f}"),
+                 _cota_h(l_alim, x1, -w_cunha, f"cunha = {l_cunha:.2f}"),
+                 _cota_v(x1 - 0.05, w_cunha, f"Wc = {w_cunha:.3f}")]
+    return lay

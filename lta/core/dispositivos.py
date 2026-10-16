@@ -37,6 +37,10 @@ class Rede:
         self.y[:, a, b] -= y
         self.y[:, b, a] -= y
 
+    def terra(self, a, z):
+        """Impedância z (escalar ou por frequência) do nó a para o terra."""
+        self.y[:, a, a] += np.broadcast_to(1 / np.asarray(z, dtype=complex), self.f.shape)
+
     def s(self, z0=50.0):
         p = self.portas
         q = [i for i in range(self.n) if i not in p]
