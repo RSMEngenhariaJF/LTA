@@ -5,6 +5,7 @@ transversal centrado na trilha, unidades em mm. Camadas:
   - topo: polígonos de cobre (trilha)
   - terra: retângulo do plano de terra, com furos circulares e fendas
     poligonais opcionais (ex.: CSRR gravado no terra)
+  - vias: furos metalizados ligando o cobre do topo ao terra
   - placa: contorno do substrato
 """
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ class Layout:
     celula: tuple = None                              # (x0, x1) da 1a célula unitária
     perfil: tuple = None                              # (x, w) contorno da trilha
     fendas_terra: list = field(default_factory=list)  # polígonos (N,2) [mm] removidos do terra
+    vias: list = field(default_factory=list)          # (cx, cy, r) [mm], furos metalizados topo-terra
 
     def largura_em(self, x):
         """Largura da trilha na posição x (0 se fora da trilha)."""

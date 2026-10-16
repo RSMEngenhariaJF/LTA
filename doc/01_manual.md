@@ -42,6 +42,10 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **EBG / Modos acoplados** | Perfil Z0(z) senoidal ou quadrado → W(z) → S por CMT numérico, cascata ABCD e solução analítica; furos no plano de terra (geometria e Bragg); atraso de grupo | 2.4 e 2.5.1 (eqs. 2.48–2.105) |
 | **Floquet / harmônicos espaciais** | Célula EBG (senoidal/quadrada), linha com carga capacitiva ou linha uniforme → βl desdobrado na zona estendida, harmônicos βn, região de onda rápida, ângulo do feixe leaky-wave, vp,n e vg | 2.2 (eqs. 2.6–2.11) |
 | **Aplicações EBG (CDL, ressonador)** | Linha de atraso chirpada: (f0, Δf, ψ) → l0, C, L → perfil Z0(z) → S11 e atraso de grupo. Ressonador de Bragg: dois refletores senoidais + cavidade Lm (eq. 2.106) → pico, QL e Q0 | 2.5.1 (eqs. 2.106, 2.109–2.115; 1.74–1.75) |
+| **CRLH / D-CRLH** (cap. 3) | Síntese balanceada por banda (f_CL, f_CR, ZB) ou por fases em duas frequências; análise de LR, CR, LL, CL quaisquer. Dispersão com sinal (LH/RH), ZB, S, εeff e μeff, fase e feixe leaky-wave do modo fundamental | 3.4.2–3.4.3 (eqs. 3.51–3.66) |
+| **CRLH microstrip (CL-loaded)** (cap. 3) | LR, CR, LL, CL → linha hospedeira, interdigitais em série e stubs com via em derivação; layout com vias | 3.5.1 (Fig. 3.27) |
+| **Linha CSRR + gap (microstrip)** (cap. 3) | Projeto balanceado (f0, ZB, fz) do circuito da Fig. 3.38b, modelo melhorado (Fig. 3.40), raio do CSRR e interdigital estimados; layout com o CSRR gravado no terra | 3.5.2.2 (eqs. 3.86–3.92) |
+| **Extração de parâmetros** (cap. 3) | Lê .s2p (EM ou medição) e extrai o circuito de CSRR, CSRR + gap, SRR, SRR + fita, OSRR, OCSRR e CRLH CL-loaded; carta de Smith e sobreposição dados × modelo | Apêndice G (eqs. G.1–G.19) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -139,6 +143,34 @@ O lado direito das abas de projeto tem duas sub-abas: **Estrutura (pré-visualiz
 - Na aba **Célula ABCD**, a prévia é o **esquemático** da célula (T, Π ou L) com os valores de cada elemento.
 - A aba **Exportar** usa a mesma prévia para a estrutura selecionada.
 
+### Capítulo 3: linhas metamateriais
+
+As quatro ferramentas do grupo **Cap. 3 – Metamateriais** seguem o fluxo do livro: **circuito → geometria inicial → simulação EM ou medição → extração → correção**. Isso é necessário porque, no capítulo 3, a ligação entre circuito e geometria não tem fórmula fechada confiável; o livro a fecha com EM e extração de parâmetros (Apêndice G) ou com *space mapping* (Apêndice H).
+
+- **CRLH / D-CRLH** ([crlh.py](../lta/core/crlh.py)):
+  - **Síntese balanceada por banda:** ωCR − ωCL = 2ωR e ωCL·ωCR = ω0² (eq. 3.66), com ZB = √(LR/CR) = √(LL/CL) (eq. 3.63).
+  - **Síntese por fases:** βl = ω/ωR − ωL/ω (eq. 3.59 balanceada), para linhas dual-band. Vale com |βl| pequeno por célula.
+  - **Sinal de β:** negativo onde a reatância série é negativa. É a banda LH (eq. 3.60 generalizada). O feixe leaky-wave do modo n = 0 varre de backfire (LH) a endfire (RH), passando por broadside na transição.
+  - **Exemplo não balanceado:** reproduz a Fig. 3.21, com gap de ωs a ωp e ZB nula em ωs e com polo em ωp.
+- **CRLH microstrip CL-loaded** ([cl_loaded.py](../lta/core/cl_loaded.py)):
+  - A linha hospedeira de Z = √(LR/CR) e período p dá LR.
+  - O capacitor interdigital (fórmula de Bahl) dá CL. Os capacitores das pontas valem 2CL.
+  - O stub em curto (Z0 escolhida) mais a via (Goldfarb e Pucel) dão LL.
+  - Os avisos indicam interdigital grande demais para o período ou stub longo. Isso é a limitação real de banda larga em uma camada, que o livro discute na seção 3.5.1.
+  - O exemplo LR = 2,45 nH, CR = 0,5 pF, LL = 3,38 nH, CL = 0,68 pF dá f0 = 3,9 GHz, como a linha da Fig. 3.28.
+- **Linha CSRR + gap** ([csrr.py](../lta/core/csrr.py)):
+  - **Projeto do circuito:** Cc = L/ZB², Lc = 1/(ω0²Cc), Cg = 1/(ω0²L) e C = 1/(ωz²Lc) − Cc (eqs. 3.86, 3.91, 3.92). L vem da linha no período escolhido.
+  - **Modelo melhorado (eqs. 3.87–3.88 invertidas):** separa a capacitância série física do gap, Cs = Cg²/(C + 2Cg), de Cpar = Cg·C/(C + 2Cg). Na Tabela 3.3, Cs = 0,014 pF e Cpar = 0,28 pF: o Cg do modelo é quase todo capacitância paralela, como o livro argumenta.
+  - **Raio do CSRR:** estimativa quase-estática da seção 3.3.2.1 (Lc = Lo/4 por CPW; Cc por dualidade com o SRR). Contra o livro, fo sai 16% baixa na Fig. 3.39.
+  - **Fator de calibração:** fo real / fo estimada, obtido de uma simulação ou medição pela aba Extração. Com a calibração, o raio da Fig. 3.39 (3,661 mm) é reproduzido.
+- **Extração de parâmetros** ([extracao.py](../lta/core/extracao.py)):
+  - **Condições do Apêndice G:** S11 sobre os círculos r = 1 (ramo em derivação abre) e g = 1 (ramo série se anula), zero de transmissão, zero de reflexão e βl = ±π/2.
+  - **Candidatos:** os cruzamentos com os círculos e os zeros do equivalente T ou π da célula medida (que pegam pontos de tangência). As combinações são testadas e fica a de menor erro rms.
+  - **Linha balanceada (fs ≈ fo):** a reatância em fo se anula e não determina L. Usa-se ZB(βl = π/2) = |X do braço série|, que é exato para célula simétrica sem perdas.
+  - **Validação:** o modelo SRR + fita reproduz as transformações das eqs. 3.71–3.74 entre as Tabelas 3.2 e 3.1. Na eq. 3.72, o fator (1 + M²/2LpLs) aparece ao quadrado; o texto extraído do PDF não mostra o expoente, mas só assim a Tabela 3.1 é reproduzida.
+  - **Fontes de dados:** arquivo .s2p (Touchstone v1: RI, MA ou DB, em qualquer unidade), resultados das outras abas (ex.: `celula_csrr`, `celula_crlh_cl`) ou exemplos com os valores das tabelas do livro.
+  - **Erro rms:** < 0,02 indica bom ajuste; > 0,1 indica modelo inadequado ou faixa grande demais.
+
 ## 3. Exportação
 
 ### 3.1 Layout
@@ -149,12 +181,13 @@ O lado direito das abas de projeto tem duas sub-abas: **Estrutura (pré-visualiz
 | `.kicad_pcb` | Altium | *File › Import Wizard › KiCad* (versões recentes; confirmar na versão instalada) |
 | `.dxf` (R12) | Altium, ADS, HFSS, CST | Altium: *File › Import › DXF/DWG* no PCB, mapeando as camadas |
 | `_topo.gtl`, `_terra.gbl`, `_contorno.gko` | Altium (CAMtastic), fabricação | Importar como Gerber RS-274X, em mm |
+| `_furos.drl` | Fabricação, Altium | Furação Excellon (mm) das vias metalizadas; só existe se houver vias |
 | `.gds` | ADS, HFSS, CST | ADS: *Layout › File › Import › GDSII*. Unidade de banco de dados 1 nm |
 | `_hfss.py` | Ansys HFSS / AEDT | *Tools › Run Script*. Cria o projeto com variáveis `h_sub` e `h_ar`, portas de onda, radiação, setup e varredura |
 | `_cst.bas` | CST Studio Suite | *Home › Macros* (editar/executar macro VBA). Parâmetros `h`, `t`, `er` e `tand` ficam editáveis |
 | `_LEIA-ME.txt` | — | Substrato, camadas e parâmetros de projeto da estrutura |
 
-Camadas (DXF/GDS): `TOPO_COBRE` (GDS 1), `TERRA` (GDS 2), `TERRA_FUROS` (GDS 3, furos a subtrair do terra) e `PLACA` (GDS 10).
+Camadas (DXF/GDS): `TOPO_COBRE` (GDS 1), `TERRA` (GDS 2), `TERRA_FUROS` (GDS 3, furos e fendas a subtrair do terra, como os anéis do CSRR), `VIAS` (GDS 4) e `PLACA` (GDS 10). No KiCad, as fendas viram áreas de exclusão do preenchimento do terra e as vias viram objetos *via*. No HFSS e no CST, as fendas são subtraídas do terra e as vias são cilindros PEC do terra ao topo.
 
 **Por que não "PCB ASCII" do Altium:** o formato ASCII do `.PcbDoc` não tem especificação pública, e um arquivo gerado por engenharia reversa pode falhar silenciosamente entre versões. As rotas DXF, Gerber e KiCad são documentadas e o Altium as importa.
 
@@ -184,6 +217,15 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | Ressonador (p. 93): βLm para φref = −95,84° | 84,15°, n = −1 | 84,16°, n = −1 |
 | Ressonador projetado: pico de \|S21\| | f0 | f0 (erro < 0,1%) |
 | Floquet, linha uniforme: início da radiação (n = −1) e broadside | c/(l(√εeff+1)), c/(l√εeff) | idem (θ = 90° ± 1°) |
+| CRLH balanceada: bordas (eq. 3.66) e ZB(f0) (eq. 3.63) | f_CL, f_CR especificadas; ZB | exatas; 50,00 Ω |
+| CRLH/D-CRLH: cos βl analítico (eqs. 3.51, 3.64) contra ABCD | — | erro < 10⁻⁸ |
+| Transformação SRR + fita (eqs. 3.71–3.74), Tabela 3.2 → 3.1 | L' 4,91 / Lp' 1,38 / Ls' 1,68 / Cs' 3,90 | 4,95 / 1,37 / 1,70 / 3,83 |
+| Idem, sem fita | L' 1,91 / Ls' 0,24 / Cs' 23,01 | 1,91 / 0,24 / 22,76 |
+| Extração (7 modelos), ida e volta com os valores das Tabelas 3.1 e 3.3 | valores das tabelas | desvio < 0,5% |
+| Extração com perdas no ressonador (R = 5 kΩ) | — | desvio < 2% |
+| Linha CSRR, ZB pela eq. 3.90 contra ABCD; eqs. 3.87–3.88 | — | exatas |
+| CSRR da Fig. 3.39: fo estimada pela geometria | 2,34 GHz (extraída) | 1,97 GHz (−16%) |
+| CRLH CL-loaded: f0 com os elementos do exemplo | 3,9 GHz (Fig. 3.28) | 3,885 GHz |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -193,6 +235,9 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 
 - Microstrip: Z0 e εeff com t = 0. Perdas e dispersão são opcionais (ver seção 2) e não incluem radiação, ondas de superfície nem a perda dos patches.
 - Os scripts HFSS e CST ainda modelam o cobre como condutor perfeito (PEC); σ e rugosidade não são exportados.
+- Capítulo 3: a geometria (raio do CSRR, interdigital, stub) é estimativa inicial de ±20% ou mais. O livro fecha esses projetos com EM e extração (Apêndice G) ou space mapping (Apêndice H, ainda não implementado). Os modelos de circuito valem até pouco acima da ressonância dos ressonadores.
+- Linhas em CPW (SRR, OSRR, OCSRR): só a extração está implementada; o projeto geométrico exige um modelo de CPW.
+- Diagrama de Floquet (aba do cap. 2): o desdobramento supõe estrutura de mão direita. Linhas CRLH usam o sinal de β calculado na aba CRLH.
 - A geometria da linha com carga capacitiva é **estimativa inicial**, porque não modela os efeitos de degrau e borda do patch. Em εr alto, o patch pode não caber no período: a ferramenta avisa e é preciso reduzir a "Z do patch".
 - EBG com furos no terra: só a geometria e a estimativa de Bragg; a resposta exige simulação EM (eq. 2.51).
 - Os scripts HFSS e CST e o `.kicad_pcb` seguem a sintaxe documentada dessas ferramentas, mas **não foram executados nas ferramentas reais** durante o desenvolvimento. Teste na versão instalada e reporte ajustes.

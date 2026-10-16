@@ -113,8 +113,18 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
         a(f'oEditor.Subtract(["NAME:Selections", "Blank Parts:=", "Terra", "Tool Parts:=", "{",".join(furos)}"],')
         a('    ["NAME:SubtractParameters", "KeepOriginals:=", False])')
     a("")
+    vias = []
+    for i, (cx, cy, r) in enumerate(layout.vias):
+        nm = f"Via{i + 1}"
+        vias.append(nm)
+        a('oEditor.CreateCylinder(["NAME:CylinderParameters",')
+        a(f'    "XCenter:=", "{_fmt(cx)}mm", "YCenter:=", "{_fmt(cy)}mm", "ZCenter:=", "0mm",')
+        a(f'    "Radius:=", "{_fmt(r)}mm", "Height:=", "h_sub", "WhichAxis:=", "Z", "NumSides:=", "0"],')
+        a(f'    attr("{nm}", "vacuum", "(160 160 160)"))')
+    a("")
     a('oBnd = oDesign.GetModule("BoundarySetup")')
-    a(f'oBnd.AssignPerfectE(["NAME:PEC_Cobre", "Objects:=", {trilhas + ["Terra"]!r}, "InfGroundPlane:=", False])')
+    a(f'oBnd.AssignPerfectE(["NAME:PEC_Cobre", "Objects:=", {trilhas + ["Terra"] + vias!r}, '
+      '"InfGroundPlane:=", False])')
     a("")
     a("# Radiacao nas faces laterais (y) e superior (z) da caixa de ar")
     a("def face(x, y, z):")
@@ -256,6 +266,13 @@ def cst(layout, caminho, f_min_ghz, f_max_ghz):
             a("End With")
             a(f'Solid.Subtract "lta:Terra", "lta:Fenda{i}"')
     a('WCS.ActivateWCS "global"')
+    for i, (cx, cy, r) in enumerate(layout.vias, start=1):
+        a("With Cylinder")
+        a(f'    .Reset : .Name "Via{i}" : .Component "lta" : .Material "PEC"')
+        a(f'    .OuterRadius "{_fmt(r)}" : .InnerRadius "0" : .Axis "z" : .Zrange "0", "h"')
+        a(f'    .Xcenter "{_fmt(cx)}" : .Ycenter "{_fmt(cy)}" : .Segments "0"')
+        a("    .Create")
+        a("End With")
     a("")
     a("With Background")
     a('    .Type "Normal"')

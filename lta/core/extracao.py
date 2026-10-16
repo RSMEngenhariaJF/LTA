@@ -66,6 +66,14 @@ def abcd_ocsrr(f, p):
     return _t(1j * w * p["L"], yp)
 
 
+def abcd_crlh(f, p):
+    """Fig. 3.20 (CL-loaded, Fig. 3.27): braços LR/2 + 2CL; derivação LL ‖ CR."""
+    w = _w(f)
+    braco = 1j * w * p["LR"] / 2 + 1 / (2j * w * p["CL"])
+    yp = 1j * w * p["CR"] + 1 / (1j * w * p["LL"])
+    return _t(braco, yp)
+
+
 @dataclass
 class Modelo:
     nome: str
@@ -88,6 +96,8 @@ MODELOS = {
                          "CPW com OSRR em série: π com C; série Ls + Cs."),
     "OCSRR (CPW)": Modelo("OCSRR (CPW)", "Fig. 3.54e", ("L", "Lp", "Cp"), abcd_ocsrr,
                           "CPW com OCSRR em derivação: braços L; derivação Lp ‖ Cp."),
+    "CRLH (CL-loaded)": Modelo("CRLH (CL-loaded)", "Fig. 3.20", ("LR", "CR", "LL", "CL"), abcd_crlh,
+                               "Interdigital + stub com via (Fig. 3.27): braços LR/2 + 2CL, derivação LL ‖ CR."),
 }
 
 
@@ -270,6 +280,30 @@ def _ocsrr(m: Medida, fq):
     return {"L": L, "Lp": 1 / (wp**2 * cp), "Cp": cp}, cond
 
 
+def _crlh(m: Medida, fq):
+    """fp (derivação abre) e χ(fp) -> LR, CL; fs (série nula) e B(fs) -> CR, LL.
+
+    Quase balanceada (fs ≈ fp): χ e B se anulam; usa-se βl = ±π/2, onde A = 0:
+    ZB(ω1) = |X do braço| e a susceptância em derivação vale 1/X.
+    """
+    fs, fp, f1 = fq["fs"], fq["fp"], fq["f1"]
+    ws, wp, w1 = 2 * np.pi * fs, 2 * np.pi * fp, 2 * np.pi * f1
+    cond = {"fs [GHz] (g = 1)": fs / 1e9, "fp [GHz] (r = 1)": fp / 1e9}
+    if abs(ws / wp - 1) > 0.05:
+        chi = m.em(fp, m.zin).imag
+        b = (1 / m.em(fs, m.zin)).imag
+        lr = chi / (wp - ws**2 / wp)                    # χ = 2·X_braço = LR(ω - ωs²/ω)
+        cr = b / (ws - wp**2 / ws)                      # B = CR(ω - ωp²/ω)
+        cond.update({"χ(fp) [Ω]": chi, "B(fs) [mS]": b * 1e3})
+    else:
+        zb1 = abs(m.em(f1, m.zb).real)
+        x = zb1 * np.sign(w1 - ws**2 / w1)              # X do braço em ω1
+        lr = 2 * x / (w1 - ws**2 / w1)
+        cr = (1 / x) / (w1 - wp**2 / w1)
+        cond.update({"f(βl = ±π/2) [GHz]": f1 / 1e9, "ZB(f1) [Ω] (balanceada)": zb1})
+    return {"LR": lr, "CL": 1 / (ws**2 * lr), "CR": cr, "LL": 1 / (wp**2 * cr)}, cond
+
+
 # modelo -> (função, frequências necessárias, topologia da célula)
 _EXTRATORES = {
     "CSRR (microstrip)": (lambda m, fq: _csrr(m, fq, False), ("fz", "fo", "f1"), "T"),
@@ -278,6 +312,7 @@ _EXTRATORES = {
     "SRR + fita (CPW)": (lambda m, fq: _srr(m, fq, True), ("fz", "fs", "fp", "f1"), "pi"),
     "OSRR (CPW)": (_osrr, ("fs", "frefl"), "pi"),
     "OCSRR (CPW)": (_ocsrr, ("fp", "frefl"), "T"),
+    "CRLH (CL-loaded)": (_crlh, ("fs", "fp", "f1"), "T"),
 }
 FREQUENCIAS = {"fz": "zero de transmissão (mín. |S21|)", "fo": "ramo em derivação abre (r = 1)",
                "fp": "ramo em derivação abre (r = 1)", "fs": "ramo série se anula (g = 1)",

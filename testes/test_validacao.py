@@ -466,6 +466,35 @@ class LinhaCSRR(unittest.TestCase):
         self.assertTrue(0.05e-12 < c1 < 2e-12)
 
 
+class CLLoaded(unittest.TestCase):
+    SUB = Substrato(2.2, 0.787, 35, 0.0009, "RT5880")
+
+    def test_projeto_reproduz_elementos(self):
+        from lta.core import cl_loaded as cl, crlh
+        from lta.core.csrr import capacitancia_interdigital
+        c = crlh.CelulaCRLH(2.45e-9, 0.5e-12, 3.38e-9, 0.68e-12)     # f0 ≈ 3,9 GHz (Fig. 3.28)
+        self.assertAlmostEqual(crlh.frequencia_transicao(c) / 1e9, 3.9, delta=0.05)
+        g, avisos = cl.projeto(c, self.SUB, n_dedos=14)
+        self.assertEqual(avisos, [])
+        _, ee = analise(g.w_linha, self.SUB)
+        self.assertAlmostEqual(np.sqrt(c.LR / c.CR) * np.sqrt(float(ee)) * g.periodo * 1e-3 / ms.C0 / c.LR, 1, places=6)
+        self.assertAlmostEqual(capacitancia_interdigital(14, g.comp_dedo, 0.1, self.SUB) / c.CL, 1, places=6)
+        self.assertAlmostEqual((g.l_stub + g.l_via) / c.LL, 1, places=9)
+        self.assertTrue(0.05e-9 < g.l_via < 0.5e-9)
+        with self.assertRaises(ValueError):                           # LL menor que a via
+            cl.projeto(crlh.CelulaCRLH(2.45e-9, 0.5e-12, 0.05e-9, 0.68e-12), self.SUB)
+
+    def test_extracao_crlh(self):
+        from lta.core import crlh, extracao as ex
+        f = np.linspace(0.3e9, 8e9, 3001)
+        for c in (crlh.CelulaCRLH(2.45e-9, 0.5e-12, 3.38e-9, 0.68e-12), crlh.balanceada_por_banda(1e9, 6e9, 50),
+                  crlh.CelulaCRLH(2.5e-9, 1e-12, 3e-9, 2e-12)):
+            p = dict(LR=c.LR, CR=c.CR, LL=c.LL, CL=c.CL)
+            q, _, err = ex.extrair("CRLH (CL-loaded)", f, ex.s_modelo("CRLH (CL-loaded)", p, f))
+            for k in p:
+                self.assertAlmostEqual(q[k] / p[k], 1, delta=1e-3, msg=k)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)
@@ -478,6 +507,9 @@ class Exportacao(unittest.TestCase):
         for serie in ("Gap simples", "Interdigital"):
             lays.append(construtores.linha_csrr(2, 8.0, 1.19, GeometriaCSRR(3.6, 0.3, 0.3), RO3010, serie,
                                                 nome=f"csrr_{serie[0]}"))
+        from lta.core import cl_loaded, crlh
+        geo_cl, _ = cl_loaded.projeto(crlh.CelulaCRLH(2.45e-9, 0.5e-12, 3.38e-9, 0.68e-12), ARLON, n_dedos=14)
+        lays.append(construtores.linha_cl_loaded(geo_cl, 3, ARLON))
         with tempfile.TemporaryDirectory() as d:
             for lay in lays:
                 arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=10))
@@ -487,6 +519,10 @@ class Exportacao(unittest.TestCase):
                 self.assertEqual(txt.count("("), txt.count(")"))
                 compile((Path(d) / f"{lay.nome}_hfss.py").read_text(), "hfss", "exec")
                 self._gds_valido((Path(d) / f"{lay.nome}.gds").read_bytes())
+                if lay.vias:
+                    drl = (Path(d) / f"{lay.nome}_furos.drl").read_text()
+                    self.assertEqual(sum(1 for x in drl.splitlines() if x.startswith("X")), len(lay.vias))
+                    self.assertEqual(txt.count("(via "), len(lay.vias))
             f = np.linspace(1e9, 2e9, 3)
             s = np.tile(np.eye(2), (3, 1, 1)).astype(complex)
             simuladores.touchstone(Path(d) / "t.s2p", f, s)

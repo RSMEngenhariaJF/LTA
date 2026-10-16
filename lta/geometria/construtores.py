@@ -111,6 +111,25 @@ def _ret(x0, y0, x1, y1):
     return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=float)
 
 
+def _interdigital(xc, n_dedos, comp_dedo, larg_dedo):
+    """Capacitor interdigital centrado em xc: duas barras + n dedos alternados (largura = espaço).
+
+    Retorna (polígonos, x inicial, x final).
+    """
+    larg_tot = (2 * n_dedos - 1) * larg_dedo
+    ext = comp_dedo + 3 * larg_dedo                     # dedos + folga na ponta + duas barras
+    xa, xb = xc - ext / 2, xc + ext / 2
+    y0 = -larg_tot / 2
+    polis = [_ret(xa, y0, xa + larg_dedo, -y0), _ret(xb - larg_dedo, y0, xb, -y0)]
+    for k in range(n_dedos):
+        ya = y0 + 2 * k * larg_dedo
+        if k % 2 == 0:
+            polis.append(_ret(xa + larg_dedo, ya, xa + larg_dedo + comp_dedo, ya + larg_dedo))
+        else:
+            polis.append(_ret(xb - larg_dedo - comp_dedo, ya, xb - larg_dedo, ya + larg_dedo))
+    return polis, xa, xb
+
+
 def linha_csrr(n_celulas, periodo, w_linha, geo, sub: Substrato, serie="Gap simples", gap=0.2,
                n_dedos=6, comp_dedo=1.0, larg_dedo=0.1, l_alim=5.0, nome="linha_csrr", info=None):
     """Microstrip com elemento série (gap ou interdigital) e CSRR no terra no centro de cada célula.
@@ -126,8 +145,7 @@ def linha_csrr(n_celulas, periodo, w_linha, geo, sub: Substrato, serie="Gap simp
     if serie == "Interdigital":
         if n_dedos < 2:
             raise ValueError("Use ao menos 2 dedos.")
-        larg_tot = (2 * n_dedos - 1) * larg_dedo
-        extensao = comp_dedo + larg_dedo + 2 * larg_dedo      # dedos + folga nas pontas + duas barras
+        extensao = comp_dedo + 3 * larg_dedo
     else:
         extensao = gap
     if extensao >= periodo:
@@ -138,15 +156,7 @@ def linha_csrr(n_celulas, periodo, w_linha, geo, sub: Substrato, serie="Gap simp
         xa, xb = xc - extensao / 2, xc + extensao / 2
         topo.append(_ret(x_esq, -w_linha / 2, xa, w_linha / 2))
         if serie == "Interdigital":
-            y0 = -larg_tot / 2
-            topo.append(_ret(xa, y0, xa + larg_dedo, -y0))                 # barra esquerda
-            topo.append(_ret(xb - larg_dedo, y0, xb, -y0))                 # barra direita
-            for k in range(n_dedos):
-                ya = y0 + 2 * k * larg_dedo
-                if k % 2 == 0:
-                    topo.append(_ret(xa + larg_dedo, ya, xa + larg_dedo + comp_dedo, ya + larg_dedo))
-                else:
-                    topo.append(_ret(xb - larg_dedo - comp_dedo, ya, xb - larg_dedo, ya + larg_dedo))
+            topo += _interdigital(xc, n_dedos, comp_dedo, larg_dedo)[0]
         x_esq = xb
     topo.append(_ret(x_esq, -w_linha / 2, comp, w_linha / 2))
     meia = max(margem_lateral(sub, w_linha), geo.r_ext + 2 * sub.h_mm)
@@ -160,4 +170,47 @@ def linha_csrr(n_celulas, periodo, w_linha, geo, sub: Substrato, serie="Gap simp
                  _cota_v(xc + 0.0, 2 * geo.r_ext, f"2·rext = {2 * geo.r_ext:.3f}"),
                  _cota_h(xc - extensao / 2, xc + extensao / 2, -geo.r_ext * 1.1,
                          f"{'gap' if serie != 'Interdigital' else 'interdigital'} = {extensao:.3f}")]
+    return lay
+
+
+def linha_cl_loaded(geo, n_celulas, sub: Substrato, l_alim=5.0, nome="crlh_cl_loaded", info=None):
+    """CRLH microstrip CL-loaded (Fig. 3.27): interdigitais em série e stubs com via em derivação.
+
+    geo: GeometriaCL (lta.core.cl_loaded). Células T: capacitores nas fronteiras (2CL nas
+    pontas, CL entre células) e stub no centro de cada célula.
+    """
+    p, w = geo.periodo, geo.w_linha
+    if geo.extensao_idc >= p:
+        raise ValueError(f"Interdigital ({geo.extensao_idc:.2f} mm) não cabe no período ({p:.2f} mm).")
+    lado_pad = 2 * geo.raio_via + 0.4
+    x0 = l_alim + (geo.comp_dedo_ext + 3 * geo.larg_dedo) / 2   # capacitores das pontas (2CL) após a alimentação
+    comp = 2 * x0 + n_celulas * p
+    topo, vias, x_esq = [], [], 0.0
+    for i in range(n_celulas + 1):
+        xb_c = x0 + i * p
+        comp_d = geo.comp_dedo_ext if i in (0, n_celulas) else geo.comp_dedo
+        polis, xa, xb = _interdigital(xb_c, geo.n_dedos, comp_d, geo.larg_dedo)
+        topo.append(_ret(x_esq, -w / 2, xa, w / 2))
+        topo += polis
+        x_esq = xb
+        if i < n_celulas:                               # stub + pad + via no centro da célula
+            xc = x0 + (i + 0.5) * p
+            y1 = w / 2 + geo.comp_stub
+            topo.append(_ret(xc - geo.w_stub / 2, 0.0, xc + geo.w_stub / 2, y1))
+            topo.append(_ret(xc - lado_pad / 2, y1, xc + lado_pad / 2, y1 + lado_pad))
+            vias.append((xc, y1 + lado_pad / 2, geo.raio_via))
+    topo.append(_ret(x_esq, -w / 2, comp, w / 2))
+    margem = max(5 * sub.h_mm, 2.0)
+    y_max = w / 2 + geo.comp_stub + lado_pad + margem
+    y_min = -max(margem_lateral(sub, w), (2 * geo.n_dedos - 1) * geo.larg_dedo / 2 + margem)
+    portas = [Porta(0.0, 0.0, w, "xmin"), Porta(comp, 0.0, w, "xmax")]
+    lay = Layout(nome, sub, topo, (0.0, y_min, comp, y_max), portas=portas, info=info or {},
+                 perfil=(np.array([0.0, comp]), np.array([w, w])), vias=vias)
+    xc = x0 + 0.5 * p
+    lay.celula = (x0, x0 + p)
+    lay.cotas = [_cota_h(x0, x0 + p, -w * 1.5, f"p = {p:.3f}"),
+                 _cota_v(xc + geo.w_stub, 2 * (w / 2 + geo.comp_stub), f"stub = {geo.comp_stub:.3f}"),
+                 _cota_h(x0 + p - geo.extensao_idc / 2, x0 + p + geo.extensao_idc / 2, w * 1.2,
+                         f"IDC = {geo.extensao_idc:.3f}"),
+                 _cota_v(x0 + 0.3 * p, w, f"W = {w:.3f}")]
     return lay

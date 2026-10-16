@@ -45,6 +45,9 @@ def _copper(ax, layout, ref=False):
             ax.add_patch(Circle((cx, cy), r, fill=False, ec=COR_REF, ls=":", lw=1.0, zorder=5))
         else:
             ax.add_patch(Circle((cx, cy), r, fc="white", ec=COR_FURO, ls="--", lw=1, zorder=2))
+    for cx, cy, r in layout.vias:
+        ax.add_patch(Circle((cx, cy), r, fc="none" if ref else "#333", ec=COR_REF if ref else "k",
+                            lw=0.8, zorder=6))
     for p in layout.fendas_terra:
         if ref:
             ax.add_patch(Polygon(p, closed=True, fill=False, ec=COR_REF, ls=":", lw=1.0, zorder=5))

@@ -11,6 +11,7 @@ from tkinter import messagebox, ttk
 
 from .aba_aplicacoes_ebg import AbaAplicacoesEBG
 from .aba_carga import AbaCarga
+from .aba_cl_loaded import AbaCLLoaded
 from .aba_celula import AbaCelula
 from .aba_crlh import AbaCRLH
 from .aba_csrr import AbaCSRR
@@ -24,7 +25,7 @@ from .comum import PASTA_SAIDAS, RAIZ, Estado
 # (nome do grupo no menu, [ferramentas])
 GRUPOS = [
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
-    ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCSRR, AbaExtracao]),
+    ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]

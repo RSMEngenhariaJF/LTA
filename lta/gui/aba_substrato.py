@@ -12,6 +12,7 @@ PREDEFINIDOS = {
     "Arlon er=2.4 h=0.675 (livro, Fig. 2.33)": Substrato(2.4, 0.675, 35, 0.0015, "Arlon er2.4"),
     "Rogers RO4003C 0.813 mm": Substrato(3.55, 0.813, 35, 0.0027, "Rogers RO4003C"),
     "FR-4 1.6 mm": Substrato(4.4, 1.6, 35, 0.02, "FR-4"),
+    "Rogers RT5880 0.787 mm": Substrato(2.2, 0.787, 35, 0.0009, "Rogers RT5880"),
 }
 
 
