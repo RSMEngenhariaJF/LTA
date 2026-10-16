@@ -495,6 +495,61 @@ class CLLoaded(unittest.TestCase):
                 self.assertAlmostEqual(q[k] / p[k], 1, delta=1e-3, msg=k)
 
 
+class Multibanda(unittest.TestCase):
+    def _confere(self, m_func, alvos, z):
+        for f, fase, zz in alvos:
+            m = m_func(np.array([f]))
+            s21 = abcd.abcd_para_s(m, z)[0, 1, 0]
+            self.assertAlmostEqual(np.degrees(-np.angle(s21)), np.degrees(fase), delta=0.01)
+            self.assertAlmostEqual(abcd.impedancia_bloch(m)[0][0].real, zz, delta=0.01)
+
+    def test_csrr_dual_livro(self):
+        from lta.core import multibanda as mb
+        # livro, p. 258: f1 = 0,9, f2 = 1,8, fz = 0,5 GHz, Zo = 35,35 Ω
+        c = mb.csrr_dual(0.9e9, -np.pi / 2, 35.35, 1.8e9, np.pi / 2, 35.35, 0.5e9)[0]
+        for calc, livro in ((c.L, 12.5e-9), (c.C, 24.9e-12), (c.Cg, 1.25e-12), (c.Lc, 3.38e-9), (c.Cc, 5.10e-12)):
+            self.assertAlmostEqual(calc / livro, 1, delta=0.01)
+        # livro, p. 259: trechos de linha com φL(f1) = 15° -> φ = -120° e +30°
+        q1, q2 = mb.compensar_linhas(-np.pi / 2, np.pi / 2, 0.9e9, 1.8e9, 15)
+        self.assertAlmostEqual(np.degrees(q1), -120, places=9)
+        self.assertAlmostEqual(np.degrees(q2), 30, places=9)
+        c = mb.csrr_dual(0.9e9, q1, 35.35, 1.8e9, q2, 35.35, 0.5e9)[0]
+        for calc, livro in ((c.L, 9.45e-9), (c.C, 17.9e-12), (c.Cg, 1.01e-12), (c.Lc, 4.85e-9), (c.Cc, 2.95e-12)):
+            self.assertAlmostEqual(calc / livro, 1, delta=0.01)
+        self._confere(c.abcd, [(0.9e9, q1, 35.35), (1.8e9, q2, 35.35)], 35.35)
+        self.assertAlmostEqual(c.fz / 1e9, 0.5, places=6)
+
+    def test_crlh_dual_eqs_4_29_a_4_32(self):
+        from lta.core import multibanda as mb
+        c = mb.crlh_dual(2.4e9, -np.pi / 2, 35.35, 3.75e9, np.pi / 2, 35.35)
+        w1, w2 = 2 * np.pi * 2.4e9, 2 * np.pi * 3.75e9
+        self.assertTrue(c.balanceada)
+        self.assertAlmostEqual(c.ws / np.sqrt(w1 * w2), 1, places=9)                    # eq. 4.31
+        self.assertAlmostEqual(c.LR, 2 * 35.35 / (w2 - w1), delta=1e-15)                 # eq. 4.32a
+        self.assertAlmostEqual(c.CL, (w2 - w1) / (2 * w1 * w2 * 35.35), delta=1e-18)     # eq. 4.32b
+        self.assertAlmostEqual(c.LL / 0.83e-9, 1, delta=0.03)          # livro (p. 255): Lp' = 0,83 nH
+        self._confere(c.abcd, [(2.4e9, -np.pi / 2, 35.35), (3.75e9, np.pi / 2, 35.35)], 35.35)
+        c = mb.crlh_dual(1e9, -np.pi / 2, 30, 2e9, np.pi / 2, 60)                      # Z1 ≠ Z2: eq. 4.30
+        self.assertAlmostEqual(c.ws * c.wp / (4 * np.pi**2 * 2e18), 1, places=9)
+
+    def test_rh_plh(self):
+        from lta.core import multibanda as mb
+        r = mb.rh_plh(1e9, -np.pi / 2, 3.1e9, np.pi / 2, 50, 4)
+        np.testing.assert_allclose(r.fase(np.array([1e9, 3.1e9])), [-np.pi / 2, np.pi / 2])   # eq. 4.20
+        with self.assertRaises(ValueError):                                             # eq. 4.24
+            mb.rh_plh(1e9, np.pi / 2, 3.5e9, 3 * np.pi / 2, 50)
+
+    def test_ecrlh_quad_livro(self):
+        from lta.core import multibanda as mb
+        f = np.array([0.9, 1.17, 1.57, 1.8]) * 1e9
+        e = mb.ecrlh_quad(f, 35.35)[0]
+        livro = dict(Lhs=22.458e-9, Chs=0.766e-12, Lhp=0.883e-9, Chp=14.06e-12, Lvs=8.785e-9, Cvs=1.414e-12,
+                     Lvp=1.915e-9, Cvp=8.986e-12)                                        # livro, p. 267
+        for k, v in e.params().items():
+            self.assertAlmostEqual(v / livro[k], 1, delta=0.05, msg=k)
+        self._confere(e.abcd, [(fx, (-1) ** k * np.pi / 2, 35.35) for k, fx in enumerate(f, 1)], 35.35)
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)
