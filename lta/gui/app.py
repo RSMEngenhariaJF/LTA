@@ -19,6 +19,7 @@ from .aba_csrr import AbaCSRR
 from .aba_ebg import AbaEBG
 from .aba_exportar import AbaExportar
 from .aba_extracao import AbaExtracao
+from .aba_filtros import AbaFiltros
 from .aba_floquet import AbaFloquet
 from .aba_multibanda import AbaMultibanda
 from .aba_substrato import AbaSubstrato
@@ -28,7 +29,7 @@ from .comum import PASTA_SAIDAS, RAIZ, Estado
 GRUPOS = [
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
-    ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos]),
+    ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos, AbaFiltros]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]

@@ -46,6 +46,9 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **CRLH microstrip (CL-loaded)** (cap. 3) | LR, CR, LL, CL → linha hospedeira, interdigitais em série e stubs com via em derivação; layout com vias | 3.5.1 (Fig. 3.27) |
 | **Linha CSRR + gap (microstrip)** (cap. 3) | Projeto balanceado (f0, ZB, fz) do circuito da Fig. 3.38b, modelo melhorado (Fig. 3.40), raio do CSRR e interdigital estimados; layout com o CSRR gravado no terra | 3.5.2.2 (eqs. 3.86–3.92) |
 | **Extração de parâmetros** (cap. 3) | Lê .s2p (EM ou medição) e extrai o circuito de CSRR, CSRR + gap, SRR, SRR + fita, OSRR, OCSRR e CRLH CL-loaded; carta de Smith e sobreposição dados × modelo | Apêndice G (eqs. G.1–G.19) |
+| **Linhas dual-band e multibanda** (cap. 4) | Fase e impedância em duas (ou quatro) frequências: linha convencional + PLH, CRLH canônica, CSRR + gap com zero de transmissão e trechos de linha, E-CRLH quad-band; verificação nas frequências de projeto | 4.2.2 (eqs. 4.20–4.37) |
+| **Híbridas e divisores** (cap. 4) | Branch-line, rat-race, Wilkinson e divisor com inversor, montados como redes de N portas; versão com linhas artificiais contra a convencional; faixas pelos critérios da Tabela 4.1 | 4.2.1–4.2.2 (eqs. 4.2–4.19, Figs. 4.5 e 4.16) |
+| **Filtros passa-faixa e dual-band** (cap. 4) | Protótipos Butterworth/Chebyshev; passa-faixa com inversores e ressonadores; transformação dual-band; filtro periódico com células híbridas de CSRR | 4.2.3 (eqs. 4.38–4.50) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -171,6 +174,37 @@ As quatro ferramentas do grupo **Cap. 3 – Metamateriais** seguem o fluxo do li
   - **Fontes de dados:** arquivo .s2p (Touchstone v1: RI, MA ou DB, em qualquer unidade), resultados das outras abas (ex.: `celula_csrr`, `celula_crlh_cl`) ou exemplos com os valores das tabelas do livro.
   - **Erro rms:** < 0,02 indica bom ajuste; > 0,1 indica modelo inadequado ou faixa grande demais.
 
+### Capítulo 4: aplicações
+
+As ferramentas do grupo **Cap. 4 – Aplicações** trabalham no nível de circuito, com o mesmo fluxo do capítulo 3 para chegar ao layout (abas CRLH CL-loaded e CSRR, depois EM e extração).
+
+- **Linhas dual-band e multibanda** ([multibanda.py](../lta/core/multibanda.py)):
+  - **Condição geral:** a célula T com fase φ e impedância Z tem braços Xa = Z·tan(φ/2) e derivação Xp = −Z/sen φ (inversão das eqs. 2.30 e 2.33). Com φ = ∓90°, são as eqs. 4.28.
+  - **Linha convencional + PLH:** eqs. 4.21–4.23, com a condição 4.24. As fórmulas supõem a PLH homogênea: com uma única célula a fase erra 23° em f1; com 4 células, 2°. A tabela de verificação mostra isso.
+  - **CRLH canônica:** solução linear (eqs. 4.29); com Z1 = Z2, a célula é balanceada em √(ω1ω2) (eqs. 4.31–4.32).
+  - **CSRR + gap:** o ramo série sai direto (eqs. 4.33a–b). O ramo em derivação (C, Lc, Cc) usa as fases e o zero de transmissão (eqs. 4.34 generalizadas). Com trechos de linha nas pontas, φcélula = φ − 2φL (p. 259). Os dois exemplos do livro são reproduzidos a 3 algarismos.
+  - **Quad-band E-CRLH:** oito condições (eqs. 4.37), resolvidas por ramo, com 3 incógnitas lineares e 1 por busca de raiz. A topologia da Fig. 3.25c foi identificada pelos valores publicados: braço Lhs/2 + 2Chs + (2Lhp ‖ Chp/2); derivação (Lvp ‖ Cvp) ‖ (Lvs + Cvs). A solução satisfaz exatamente ±90° e 35,35 Ω nas quatro frequências; os valores do livro ficam a até 3,4% dela e erram até 4 Ω.
+- **Híbridas e divisores** ([dispositivos.py](../lta/core/dispositivos.py)):
+  - **Rede de N portas:** cada linha entra pela sua matriz ABCD na matriz Y nodal; os nós internos são eliminados (redução de Kron).
+  - **Dispositivos:**
+    - branch-line: entrada 1, direta 2, acoplada 3, isolada 4;
+    - rat-race: porta 4 = Σ, porta 1 = Δ, como na Fig. 4.7;
+    - Wilkinson;
+    - divisor em Y com inversor (Figs. 4.11 e 4.15).
+  - **Linhas:** convencional, CRLH dual-band (−90° em f1, +90° em f2) ou PLH de −90° no lugar do ramo de 270° do rat-race (banda larga, Figs. 4.1 e 4.5).
+  - **Métricas:** faixa contínua em torno de cada frequência de projeto em que valem |S11| < −10 dB, saídas −3 ± 1 dB, balanço de fase ± 5° e isolamento < −15 dB.
+  - **Limites de banda da seção 4.2.1:** dφ/dω da linha dual (eqs. 4.8–4.11) e a fase-limite de uma célula, 0,708π (livro: 0,7π).
+- **Antena leaky-wave** (aba CRLH): com α/k0 obtido por EM, a aba calcula o nº de células para irradiar a fração escolhida da potência (eq. 4.51) e a largura de feixe pela aproximação de abertura (Jackson e Oliner).
+- **Filtros** ([filtros.py](../lta/core/filtros.py)):
+  - **Protótipos:** Butterworth e Chebyshev (inclusive ordem par, com o último inversor K = Z0·√g(n+1)).
+  - **Passa-faixa:** inversores ideais e tanques Ceq = g/(FBW·ω0·Z0) (eqs. 4.40–4.42).
+  - **Dual-band:** transformação das eqs. 4.49–4.50, que leva cada tanque a (L' ‖ C') ‖ (L'' + C''), a derivação da E-CRLH.
+  - **Filtro periódico com células híbridas de CSRR:**
+    - Cg pela eq. 4.46; Ld, C, Lc e Cc pelas eqs. 3.86 e 4.43–4.45;
+    - g de elementos iguais com 3 dB em Ω = 1 dá 1,521 para n = 3, como no livro;
+    - a solução atende às condições declaradas e dá FBW de 9,5% centrada em 1,001 GHz;
+    - os valores da Tabela 4.2 dão fz = 1,80 GHz e Zp(f0) = j33,7 Ω. Provavelmente incluem o ajuste de layout descrito no livro, então a diferença em relação a eles é esperada.
+
 ## 3. Exportação
 
 ### 3.1 Layout
@@ -226,6 +260,15 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | Linha CSRR, ZB pela eq. 3.90 contra ABCD; eqs. 3.87–3.88 | — | exatas |
 | CSRR da Fig. 3.39: fo estimada pela geometria | 2,34 GHz (extraída) | 1,97 GHz (−16%) |
 | CRLH CL-loaded: f0 com os elementos do exemplo | 3,9 GHz (Fig. 3.28) | 3,885 GHz |
+| Dual-band CSRR + gap, p. 258 (L, C, Cg, Lc, Cc) | 12,5 / 24,9 / 1,25 / 3,38 / 5,10 | 12,50 / 24,91 / 1,251 / 3,376 / 5,096 |
+| Idem com trechos de linha, φL(f1) = 15° (p. 259) | 9,45 / 17,9 / 1,01 / 4,85 / 2,95 | 9,45 / 17,92 / 1,005 / 4,852 / 2,956 |
+| Inversor CRLH 2,4/3,75 GHz (p. 255): CL, LL | 0,33 pF, 0,83 nH (após parasitas) | 0,338 pF, 0,844 nH |
+| Quad-band E-CRLH (p. 267), 8 elementos | valores publicados | a 3,4% (e ±90°, 35,35 Ω exatos) |
+| Fase-limite de uma célula dual (p. 239) | 0,7π | 0,708π |
+| Rat-race com −90° LH: banda de balanço de fase ±5° | maior que a convencional | 15,6% → 102% (circuito ideal) |
+| g periódico de 3 elementos (p. 283) | 1,521 | 1,5214 |
+| Chebyshev 0,5 dB n = 3 / 0,1 dB n = 4 (tabelas) | 1,5963 1,0967 / 1,1088 1,3061 1,7703 0,8180 1,3554 | idem (±2·10⁻⁴) |
+| Filtro híbrido periódico, f0 = 1 GHz, FBW 10% | 8% medido | 9,5% (circuito) |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -238,6 +281,7 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 - Capítulo 3: a geometria (raio do CSRR, interdigital, stub) é estimativa inicial de ±20% ou mais. O livro fecha esses projetos com EM e extração (Apêndice G) ou space mapping (Apêndice H, ainda não implementado). Os modelos de circuito valem até pouco acima da ressonância dos ressonadores.
 - Linhas em CPW (SRR, OSRR, OCSRR): só a extração está implementada; o projeto geométrico exige um modelo de CPW.
 - Diagrama de Floquet (aba do cap. 2): o desdobramento supõe estrutura de mão direita. Linhas CRLH usam o sinal de β calculado na aba CRLH.
+- Capítulo 4: dispositivos e filtros são simulados com circuitos ideais (inversores ideais, sem perdas nem parasitas). A implementação física desloca as bandas; o livro fecha com EM, extração e ASM. O α/k0 da antena leaky-wave vem de EM.
 - A geometria da linha com carga capacitiva é **estimativa inicial**, porque não modela os efeitos de degrau e borda do patch. Em εr alto, o patch pode não caber no período: a ferramenta avisa e é preciso reduzir a "Z do patch".
 - EBG com furos no terra: só a geometria e a estimativa de Bragg; a resposta exige simulação EM (eq. 2.51).
 - Os scripts HFSS e CST e o `.kicad_pcb` seguem a sintaxe documentada dessas ferramentas, mas **não foram executados nas ferramentas reais** durante o desenvolvimento. Teste na versão instalada e reporte ajustes.

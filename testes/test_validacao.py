@@ -602,6 +602,66 @@ class Dispositivos(unittest.TestCase):
         self.assertGreater(banda[1], 3 * banda[0])
 
 
+class Filtros(unittest.TestCase):
+    def test_prototipos_tabelados(self):
+        from lta.core import filtros as ft
+        np.testing.assert_allclose(ft.prototipo("Chebyshev", 3, 0.5)[1:4], [1.5963, 1.0967, 1.5963], atol=1e-4)
+        np.testing.assert_allclose(ft.prototipo("Chebyshev", 4, 0.1)[1:6], [1.1088, 1.3061, 1.7703, 0.8180, 1.3554],
+                                   atol=2e-4)
+        np.testing.assert_allclose(ft.prototipo("Butterworth", 3)[1:4], [1, 2, 1], atol=1e-12)
+        self.assertAlmostEqual(ft.g_periodico(3), 1.521, delta=0.001)                # livro, p. 283
+
+    def test_passa_faixa_chebyshev(self):
+        from lta.core import filtros as ft
+        f = np.linspace(0.85e9, 1.15e9, 12001)
+        for n, rip in ((3, 0.5), (4, 0.1)):
+            g = ft.prototipo("Chebyshev", n, rip)
+            ceq, leq, _ = ft.ressonadores(g, 1e9, 0.1)
+            s = ft.resposta_inversores(f, g, [ft.tanque(c, l) for c, l in zip(ceq, leq)])
+            s21 = abcd.db(s[:, 1, 0])
+            banda = np.flatnonzero(s21 >= -rip - 1e-6)
+            fa, fb = f[banda[0]], f[banda[-1]]
+            self.assertAlmostEqual((fb - fa) / np.sqrt(fa * fb), 0.1, delta=0.003)    # FBW de ripple
+            self.assertAlmostEqual(-s21[banda].min(), rip, delta=1e-3)
+            self.assertAlmostEqual(abcd.db(s[banda, 0, 0]).max(), 10 * np.log10(1 - 10 ** (-rip / 10)), delta=0.05)
+
+    def test_dual_band_eqs_4_49_a_4_50(self):
+        from lta.core import filtros as ft
+        f1, f2 = 0.9e9, 1.8e9
+        np.testing.assert_allclose(ft.mapa_dual(np.array([f1, f2]), f1, f2), [-1, 1])
+        g = ft.prototipo("Chebyshev", 3, 0.1)
+        ceq, leq, _ = ft.ressonadores(g, np.sqrt(f1 * f2), 0.1)
+        ys = [ft.admitancia_dual(*ft.ressonador_dual(c, l, f1, f2)) for c, l in zip(ceq, leq)]
+        s = ft.resposta_inversores(np.array([f1, f2, 1.3e9]), g, ys)
+        np.testing.assert_allclose(np.abs(s[:2, 1, 0]), 1, atol=1e-9)                # centro das duas bandas
+        self.assertLess(abcd.db(s[2, 1, 0]), -30)                                      # rejeição entre bandas
+
+    def test_celula_hibrida(self):
+        from lta.core import filtros as ft
+        p = ft.celula_hibrida(1e9, 0.1, 1.521, 2e9)
+        self.assertAlmostEqual(p["Cg"] / 1.59e-12, 1, delta=0.005)                      # eq. 4.46, Tabela 4.2
+        w = 2 * np.pi * 1e9
+        zb = 1 / (1j * w * p["C"]) + 1j * w * p["Lc"] / (1 - w**2 * p["Lc"] * p["Cc"])
+        self.assertAlmostEqual((1 / (1 / (1j * w * p["Ld"]) + 1 / zb)).imag, 50, delta=1e-6)   # Zp(ω0) = jZ0
+        self.assertAlmostEqual(1 / (2 * np.pi * np.sqrt(p["Lc"] * (p["C"] + p["Cc"]))), 2e9, delta=1)  # eq. 3.86
+        f = np.linspace(0.5e9, 3e9, 25001)
+        s = abcd.abcd_para_s(abcd.potencia(ft.abcd_hibrida(f, p), 3), 50)
+        a, b, fc = ft.banda_3db(f, s[:, 1, 0])
+        self.assertAlmostEqual(fc / 1e9, 1.0, delta=0.01)
+        self.assertAlmostEqual((b - a) / fc, 0.1, delta=0.01)
+
+
+class LWA(unittest.TestCase):
+    def test_eq_4_51(self):
+        from lta.core import floquet as fl
+        f, d = 2.5e9, 0.02
+        n = fl.celulas_lwa(0.076, f, d, 0.95)
+        alfa = 0.076 * 2 * np.pi * f / ms.C0
+        self.assertLessEqual(np.exp(-2 * alfa * n * d), 0.05)
+        self.assertGreater(np.exp(-2 * alfa * (n - 1) * d), 0.05)
+        self.assertAlmostEqual(fl.largura_feixe(0.4, ms.C0 / 0.04, 90), np.degrees(0.1), places=6)   # λ0/L
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)

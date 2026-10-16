@@ -40,6 +40,8 @@ class AbaCRLH(AbaBase):
             ("n", "Nº de células", 9, ""),
             ("zp", "Z das portas", 50.0, "Ω"),
             ("lcel", "Comprimento da célula (0 = ignorar)", 6.0, "mm"),
+            ("alfa", "LWA: α/k0 (de EM; 0 = ignorar)", 0.0, ""),
+            ("eta", "LWA: potência a irradiar", 95.0, "%"),
             ("fmax", "f máx", 8.0, "GHz"),
             ("npts", "Pontos", 2001, ""),
         ], titulo="Análise")
@@ -175,6 +177,8 @@ class AbaCRLH(AbaBase):
             ax[5].set_title("Feixe leaky-wave do modo fundamental (eq. 2.11)", fontsize=9)
             for fa, fb, ta, tb in fl.faixas_radiacao(f, h):
                 texto_leaky.append(f"  {fa / 1e9:.3f} a {fb / 1e9:.3f} GHz: θ de {ta:.0f}° a {tb:.0f}°")
+            if a["alfa"] > 0 and texto_leaky:
+                texto_leaky += self._texto_lwa(c, f, h, lcel, a)
         else:
             ax[5].text(0.5, 0.5, "Informe o comprimento da célula\npara a análise leaky-wave", ha="center",
                        va="center", transform=ax[5].transAxes, fontsize=8)
@@ -187,6 +191,22 @@ class AbaCRLH(AbaBase):
         self.grafico.desenhar()
         self.ver_resultados()
         self.saida.escrever(self._texto(c, f, bl, al, zb, s, a, texto_leaky))
+
+    def _texto_lwa(self, c, f, h, lcel, a):
+        """Projeto da antena: nº de células (eq. 4.51) e largura de feixe."""
+        f0 = crlh.frequencia_transicao(c) if c.tipo == "CRLH" else f[np.nanargmin(np.abs(h.theta_graus - 90))]
+        n = fl.celulas_lwa(a["alfa"], f0, lcel, a["eta"] / 100)
+        comp = n * lcel
+        linhas = ["", f"Antena leaky-wave (α/k0 = {a['alfa']:g}, {a['eta']:g}% irradiado):",
+                  f"  N = {n} células (eq. 4.51), comprimento {comp * 1e3:.1f} mm "
+                  f"= {comp * f0 / C0:.2f} λ0 em {f0 / 1e9:.3f} GHz"]
+        for ang in (135, 90, 45):
+            i = np.nanargmin(np.abs(np.nan_to_num(h.theta_graus, nan=1e9) - ang))
+            if abs(h.theta_graus[i] - ang) < 5:
+                linhas.append(f"  θ = {ang}° em {f[i] / 1e9:.3f} GHz: feixe ≈ "
+                              f"{fl.largura_feixe(comp, f[i], ang):.1f}° (Jackson-Oliner)")
+        linhas.append("  α/k0 depende da geometria (simular N células em EM).")
+        return linhas
 
     def _texto(self, c, f, bl, al, zb, s, a, texto_leaky):
         g = lambda w: w / (2 * np.pi * 1e9)  # noqa: E731

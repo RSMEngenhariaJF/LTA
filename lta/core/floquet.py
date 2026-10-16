@@ -98,3 +98,30 @@ def frequencia_broadside(periodo, eeff, n=-1):
 def inicio_radiacao(periodo, eeff, n=-1):
     """Linha pouco perturbada: β_n = -k0 (backfire) em f = |n|·c/(l·(√εeff + 1))."""
     return abs(n) * C0 / (periodo * (np.sqrt(eeff) + 1))
+
+
+# ---------------------------------------------------------------------------
+# Antena leaky-wave (seção 4.2.4)
+# ---------------------------------------------------------------------------
+def celulas_lwa(alfa_k0, f, d, fracao=0.95):
+    """Nº de células para irradiar `fracao` da potência: P_N = P0·e^(-2αNd) (eq. 4.51).
+
+    alfa_k0: α/k0 (obtido por simulação EM de N células, como no livro); d: célula [m].
+    Livro: α/k0 = 0,076 e 95% de potência irradiada levaram a N = 17.
+    """
+    if not 0 < fracao < 1 or alfa_k0 <= 0 or d <= 0:
+        raise ValueError("Use 0 < fração < 1, α/k0 > 0 e célula > 0.")
+    alfa = alfa_k0 * 2 * np.pi * f / C0
+    return int(np.ceil(-np.log(1 - fracao) / (2 * alfa * d)))
+
+
+def largura_feixe(comprimento, f, theta_graus):
+    """Largura de feixe de meia potência [°] de uma fonte linear leaky-wave de comprimento L.
+
+    Aproximação de abertura (Jackson e Oliner): Δθ ≈ λ0/(L·sen θ), θ a partir do eixo da
+    linha (90° = broadside). Vale para α pequeno e feixe longe de endfire/backfire.
+    """
+    lam = C0 / np.asarray(f, dtype=float)
+    s = np.sin(np.radians(np.asarray(theta_graus, dtype=float)))
+    with np.errstate(divide="ignore"):
+        return np.degrees(lam / (comprimento * s))
