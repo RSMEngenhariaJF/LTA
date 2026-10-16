@@ -662,6 +662,93 @@ class LWA(unittest.TestCase):
         self.assertAlmostEqual(fl.largura_feixe(0.4, ms.C0 / 0.04, 90), np.degrees(0.1), places=6)   # λ0/L
 
 
+class Sintonia(unittest.TestCase):
+    def test_mems_pull_in(self):
+        from lta.core import sintonia as st
+        g0, k, area = 3e-6, 10.0, 1e-8
+        g = np.linspace(0.01, 0.999, 20001) * g0
+        v = st.mems_tensao(g, g0, k, area)
+        self.assertAlmostEqual(g[np.argmax(v)] / g0, 2 / 3, delta=1e-3)                 # máximo em 2g0/3
+        self.assertAlmostEqual(v.max() / st.mems_pull_in(g0, k, area), 1, places=6)      # eq. 5.5
+
+    def test_varactor(self):
+        from lta.core import sintonia as st
+        c = st.varactor(np.array([0, 5, 30]), 9e-12)
+        np.testing.assert_allclose(st.tensao_varactor(c, 9e-12), [0, 5, 30], atol=1e-9)
+        self.assertTrue(np.all(np.diff(c) < 0))
+        self.assertAlmostEqual(st.hbv(1.3, 0.12e-12, 0.5), st.hbv(-1.3, 0.12e-12, 0.5))   # HBV simétrico
+
+    def test_vlsrr_fig_5_7(self):
+        from lta.core import sintonia as st
+        f = np.linspace(1e9, 5e9, 8001)
+        f0s, rej = [], []
+        for cv in (1e-12, 9e-12):
+            ceq = st.vlsrr_ceq(1.4e-12, cv)
+            ls, cs, r, w0 = st.vlsrr_tanque(1.2e-9, 3e-9, ceq, 4.8)
+            self.assertAlmostEqual(ls, 4 * 1.2e-9**2 / 3e-9, delta=1e-18)                # Ls' = 4M²/Lr
+            self.assertAlmostEqual(w0 * r * cs, w0 * 3e-9 / 4.8, places=6)                # Q = ω0·Lr/Rs
+            s = abcd.abcd_para_s(abcd.potencia(st.vlsrr_abcd(f, 3.3e-9, 1.3e-12, 1.2e-9, 3e-9, ceq, 4.8), 2), 50)
+            i = np.argmin(abs(s[:, 1, 0]))
+            self.assertAlmostEqual(f[i] / (w0 / 2 / np.pi), 1, delta=0.005)               # notch em f0
+            rej.append(abcd.db(s[i, 1, 0]))
+        self.assertLess(rej[0], rej[1])          # rejeição mais funda no topo da faixa (p. 373)
+
+    def test_crlh_sintonizada(self):
+        from lta.core import sintonia as st, crlh
+        c = crlh.balanceada_por_banda(1e9, 6e9, 50)
+        f = np.linspace(0.5e9, 6e9, 50)
+        np.testing.assert_allclose(st.crlh_abcd_q(c, f), c.abcd(f))
+        for x in (0.6, 1.7):
+            cx = st.crlh_sintonizada(c, x)
+            self.assertTrue(cx.balanceada)
+            f0 = crlh.frequencia_transicao(cx)
+            self.assertAlmostEqual(f0 / (crlh.frequencia_transicao(c) / np.sqrt(x)), 1, places=9)
+            self.assertAlmostEqual(abs(cx.zb(np.array([f0 * 1.0001]))[0]), 50, delta=0.05)  # eq. 5.11
+        self.assertAlmostEqual(st.figura_merito([10, 100], [-0.5, -2.0]), 45.0)             # eq. 5.12
+
+
+class NLTL(unittest.TestCase):
+    def _linha(self, cm=0.12):
+        from lta.core import nltl as nl, sintonia as st
+        return nl.LinhaNL(108.7e-12, 43.5e-15, lambda v: st.hbv(v, cm * 1e-12, 0.5))   # livro, Fig. 5.40
+
+    def test_atraso_x_amplitude(self):
+        from lta.core import nltl as nl
+        lin = self._linha()
+        tmin, tmax = nl.faixa_atraso(lin)
+        self.assertAlmostEqual(tmin * 1e12, 2.174, delta=0.002)
+        self.assertAlmostEqual(tmax * 1e12, 4.216, delta=0.002)
+        amps = [nl.amplitude_soliton(lin, t) for t in (3.5e-12, 3.75e-12, 4e-12)]       # Fig. 5.41
+        self.assertTrue(amps[0] > amps[1] > amps[2] > 0)
+        for a, t in zip(amps, (3.5e-12, 3.75e-12, 4e-12)):
+            self.assertAlmostEqual(nl.atraso_soliton(lin, a) / t, 1, places=6)
+
+    def test_velocidade_simulada(self):
+        # sóliton que emerge de um pulso: atraso medido no tempo contra a eq. 5.24
+        from lta.core import nltl as nl
+        lin = self._linha()
+        fonte = lambda t: 2 * 3 * np.exp(-((t - 40e-12) / 8e-12) ** 2)                  # noqa: E731
+        t, _, reg = nl.simular(lin, [120], fonte, 700e-12, 0.02e-12, nos=[60, 110])
+        i1, i2 = np.argmax(reg[:, 0]), np.argmax(reg[:, 1])
+        medido = (t[i2] - t[i1]) / 50
+        self.assertAlmostEqual(medido / nl.atraso_soliton(lin, reg[i2, 1]), 1, delta=0.01)
+
+    def test_multiplicador_tendencia(self):
+        # livro, Fig. 5.44: CM maior -> máximo do 3º harmônico com menos seções
+        from lta.core import nltl as nl
+        ns = list(range(9, 46, 3))
+        otimo = []
+        for cm in (0.12, 0.24):
+            lin = self._linha(cm)
+            t_fim = 2 * max(ns) * nl.faixa_atraso(lin)[1] + 12 / 20e9                      # como na aba
+            t, sai, _ = nl.simular(lin, ns, lambda t: -20 * np.sin(2 * np.pi * 20e9 * t), t_fim, 0.03e-12)
+            ef = nl.eficiencia_harmonica(t, sai, 20e9, 3, lin.z0_linha, 100 / (2 * lin.z0_linha))
+            otimo.append(ns[int(np.argmax(ef))])
+            self.assertTrue(0.1 < ef.max() < 0.6)
+        self.assertGreater(otimo[0], otimo[1])
+        self.assertTrue(21 <= otimo[0] <= 39)                                             # livro: 27
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)

@@ -22,6 +22,8 @@ from .aba_extracao import AbaExtracao
 from .aba_filtros import AbaFiltros
 from .aba_floquet import AbaFloquet
 from .aba_multibanda import AbaMultibanda
+from .aba_nltl import AbaNLTL
+from .aba_sintonia import AbaSintonia
 from .aba_substrato import AbaSubstrato
 from .comum import PASTA_SAIDAS, RAIZ, Estado
 
@@ -30,6 +32,7 @@ GRUPOS = [
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
     ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos, AbaFiltros]),
+    ("Cap. 5 – Sintonizáveis e não lineares", [AbaSintonia, AbaNLTL]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]
@@ -37,7 +40,7 @@ GERAIS = [AbaSubstrato, AbaExportar]
 # lista plana mantida para scripts e testes (ordem de criação)
 ABAS = [AbaSubstrato] + [c for _, cs in GRUPOS for c in cs] + [AbaExportar]
 
-VERSAO = "1.5"
+VERSAO = "1.6"
 
 
 class Aplicacao:

@@ -49,6 +49,8 @@ O substrato ativo fica sempre visível numa barra abaixo do menu. Os atalhos sã
 | **Linhas dual-band e multibanda** (cap. 4) | Fase e impedância em duas (ou quatro) frequências: linha convencional + PLH, CRLH canônica, CSRR + gap com zero de transmissão e trechos de linha, E-CRLH quad-band; verificação nas frequências de projeto | 4.2.2 (eqs. 4.20–4.37) |
 | **Híbridas e divisores** (cap. 4) | Branch-line, rat-race, Wilkinson e divisor com inversor, montados como redes de N portas; versão com linhas artificiais contra a convencional; faixas pelos critérios da Tabela 4.1 | 4.2.1–4.2.2 (eqs. 4.2–4.19, Figs. 4.5 e 4.16) |
 | **Filtros passa-faixa e dual-band** (cap. 4) | Protótipos Butterworth/Chebyshev; passa-faixa com inversores e ressonadores; transformação dual-band; filtro periódico com células híbridas de CSRR | 4.2.3 (eqs. 4.38–4.50) |
+| **Linhas sintonizáveis** (cap. 5) | Varactor, HBV e RF-MEMS (pull-in); linha com SRR e varactor (rejeita-faixa sintonizável); CRLH balanceada sintonizável como defasador (FoM) e antena leaky-wave de varredura em frequência fixa | 5.2–5.3 (eqs. 5.1–5.12) |
+| **Linha não linear (NLTL)** (cap. 5) | Sólitons (atraso × amplitude, forma), decomposição de pulsos e multiplicação de frequência por simulação no tempo | 5.4 (eqs. 5.13–5.25) |
 | **Exportar** | Layout para KiCad, DXF, Gerber, GDSII, script HFSS e macro CST; parâmetros S em Touchstone e CSV | — |
 
 Cada aba de projeto tem botões **Exemplo** que reproduzem figuras do livro, **Enviar p/ exportação** (manda o layout para a aba Exportar) e **Exportar S2P**.
@@ -205,6 +207,32 @@ As ferramentas do grupo **Cap. 4 – Aplicações** trabalham no nível de circu
     - a solução atende às condições declaradas e dá FBW de 9,5% centrada em 1,001 GHz;
     - os valores da Tabela 4.2 dão fz = 1,80 GHz e Zp(f0) = j33,7 Ω. Provavelmente incluem o ajuste de layout descrito no livro, então a diferença em relação a eles é esperada.
 
+### Capítulo 5: linhas sintonizáveis e não lineares
+
+- **Dispositivos de sintonia** ([sintonia.py](../lta/core/sintonia.py)):
+  - **Varactor:** Cj0/(1 + V/φ)^γ, com γ entre 1/3 e 1/2, conforme a nota 1 do livro.
+  - **HBV:** CM·sech(kV), capacitância par.
+  - **RF-MEMS de placas paralelas:** C = ε0A/g; a tensão V(g) pela eq. 5.4; o pull-in Vp = √(8k·g0³/(27ε0A)) em g = 2g0/3 (eq. 5.5).
+- **Linha com SRR e varactor (VLSRR):**
+  - Ceq = CL em série com Cvar (CR é desprezada, como no texto).
+  - O tanque refletido na linha (eqs. 5.6) tem Ls' = 4M²Ceqω0² = 4M²/Lr, Cs' = Lr/(4M²ω0²) e R = 4M²ω0²/Rs, com Q = ω0Lr/Rs.
+  - Com os valores da Fig. 5.7, sintoniza de 2,64 a 3,80 GHz, com rejeição mais funda no topo da faixa, como o livro descreve.
+- **CRLH sintonizável:**
+  - CL e LL são multiplicados pelo mesmo fator x (eqs. 5.9–5.11). Na linha balanceada, ZB fica constante e a transição vai para f0/√x.
+  - **Defasador:** mostra a defasagem em f_op e a FoM da eq. 5.12, com Q finito nos elementos sintonizáveis.
+  - **Antena leaky-wave:** ângulo do feixe em frequência fixa (seção 5.3.2.2).
+- **Linha não linear** ([nltl.py](../lta/core/nltl.py)):
+  - **Sólitons:**
+    - F(V) e G(V) pelas eqs. 5.21 e 5.25;
+    - faixa de atrasos possíveis: √(L·C(∞)) a √(L·C(0));
+    - atraso × amplitude pela eq. 5.24;
+    - forma do pulso por quadratura da eq. 5.20: (T⁴/24L)(dV/ds)² = G(V) − T²V²/(2L).
+  - **Simulação no tempo:** integra as eqs. 5.13–5.15 (RK4) com fonte e carga resistivas, vetorizada para simular várias linhas de comprimentos diferentes de uma vez.
+  - **Validação interna:** o atraso dos sólitons simulados confere com a eq. 5.24 com erro ≤ 1,5%. O erro cresce para sólitons curtos, como esperado da aproximação contínua (eq. 5.17).
+  - **Multiplicador:** com os parâmetros da Fig. 5.44, o máximo do 3º harmônico cai com CM, como no livro: 33 seções para CM = 0,12 pF, contra 27 no livro.
+    - A posição exata depende das terminações, que o livro não informa; o padrão aqui é √(L/Co) = 50 Ω.
+    - As eficiências não incluem perdas.
+
 ## 3. Exportação
 
 ### 3.1 Layout
@@ -269,6 +297,12 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 | g periódico de 3 elementos (p. 283) | 1,521 | 1,5214 |
 | Chebyshev 0,5 dB n = 3 / 0,1 dB n = 4 (tabelas) | 1,5963 1,0967 / 1,1088 1,3061 1,7703 0,8180 1,3554 | idem (±2·10⁻⁴) |
 | Filtro híbrido periódico, f0 = 1 GHz, FBW 10% | 8% medido | 9,5% (circuito) |
+| RF-MEMS: pull-in em g = 2g0/3 (eq. 5.5) | 2g0/3 | 0,6667·g0 |
+| VLSRR (Fig. 5.7): faixa de sintonia, Q = ω0Lr/Rs | rejeição mais funda no topo | 2,64–3,80 GHz; −32 → −48 dB |
+| CRLH balanceada sintonizada: ZB (eq. 5.11) | constante | 50,00 Ω em x = 0,6 a 1,7 |
+| NLTL (Fig. 5.40): faixa de atraso dos sólitons | — | 2,174 a 4,216 ps |
+| Sóliton simulado no tempo × eq. 5.24 | — | erro ≤ 1,5% |
+| Multiplicador NLTL (Fig. 5.44): seções do máximo de 3º harmônico, CM = 0,12 pF | 27 | 33 (cai com CM, como no livro) |
 | Exemplo Fig. 2.34: L, C, Cls | 3,1 nH, 0,17 pF, 1,2 pF | 3,30 nH, 0,157 pF, 1,31 pF (\*\*) |
 
 (\*) O livro obtém εeff por solver EM; aqui ele vem de fórmula fechada (εeff 6,82 contra ≈ 7,0).
@@ -282,6 +316,7 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 - Linhas em CPW (SRR, OSRR, OCSRR): só a extração está implementada; o projeto geométrico exige um modelo de CPW.
 - Diagrama de Floquet (aba do cap. 2): o desdobramento supõe estrutura de mão direita. Linhas CRLH usam o sinal de β calculado na aba CRLH.
 - Capítulo 4: dispositivos e filtros são simulados com circuitos ideais (inversores ideais, sem perdas nem parasitas). A implementação física desloca as bandas; o livro fecha com EM, extração e ASM. O α/k0 da antena leaky-wave vem de EM.
+- Capítulo 5: o modelo do VLSRR usa só o acoplamento magnético (Fig. 5.8a), que o livro mostra ser dominante. A NLTL não inclui perdas do dispositivo nem da linha, e as terminações padrão são de √(L/Co); a simulação no tempo leva alguns segundos.
 - A geometria da linha com carga capacitiva é **estimativa inicial**, porque não modela os efeitos de degrau e borda do patch. Em εr alto, o patch pode não caber no período: a ferramenta avisa e é preciso reduzir a "Z do patch".
 - EBG com furos no terra: só a geometria e a estimativa de Bragg; a resposta exige simulação EM (eq. 2.51).
 - Os scripts HFSS e CST e o `.kicad_pcb` seguem a sintaxe documentada dessas ferramentas, mas **não foram executados nas ferramentas reais** durante o desenvolvimento. Teste na versão instalada e reporte ajustes.
