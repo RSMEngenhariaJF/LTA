@@ -14,6 +14,7 @@ from .aba_carga import AbaCarga
 from .aba_cl_loaded import AbaCLLoaded
 from .aba_celula import AbaCelula
 from .aba_crlh import AbaCRLH
+from .aba_dispositivos import AbaDispositivos
 from .aba_csrr import AbaCSRR
 from .aba_ebg import AbaEBG
 from .aba_exportar import AbaExportar
@@ -27,7 +28,7 @@ from .comum import PASTA_SAIDAS, RAIZ, Estado
 GRUPOS = [
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
-    ("Cap. 4 – Aplicações", [AbaMultibanda]),
+    ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]

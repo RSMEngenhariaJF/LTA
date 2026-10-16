@@ -550,6 +550,58 @@ class Multibanda(unittest.TestCase):
         self._confere(e.abcd, [(fx, (-1) ** k * np.pi / 2, 35.35) for k, fx in enumerate(f, 1)], 35.35)
 
 
+class Dispositivos(unittest.TestCase):
+    def test_ideais(self):
+        from lta.core import dispositivos as dv
+        f = np.array([1e9])
+        z = 50.0
+        s = dv.branch_line(f, dv.linha_convencional(z / np.sqrt(2), np.pi / 2, 1e9),
+                           dv.linha_convencional(z, np.pi / 2, 1e9))[0]
+        np.testing.assert_allclose(np.abs(s[:, 0]) ** 2, [0, 0.5, 0.5, 0], atol=1e-12)
+        self.assertAlmostEqual(abs(dv.diferenca_fase(s[1, 0], s[2, 0])), 90, places=6)
+        zr = z * np.sqrt(2)
+        s = dv.rat_race(f, dv.linha_convencional(zr, np.pi / 2, 1e9), dv.linha_convencional(zr, 3 * np.pi / 2, 1e9))[0]
+        self.assertAlmostEqual(abs(dv.diferenca_fase(s[1, 0], s[2, 0])), 180, places=6)   # Δ
+        self.assertAlmostEqual(dv.diferenca_fase(s[1, 3], s[2, 3]), 0, places=6)         # Σ
+        s = dv.wilkinson(f, dv.linha_convencional(zr, np.pi / 2, 1e9))[0]
+        np.testing.assert_allclose(np.abs(s) ** 2, [[0, .5, .5], [.5, 0, 0], [.5, 0, 0]], atol=1e-12)
+
+    def test_branch_line_dual_band(self):
+        from lta.core import dispositivos as dv
+        f = np.array([0.9e9, 1.8e9])
+        s = dv.branch_line(f, dv.linha_crlh_dual(50 / np.sqrt(2), 0.9e9, 1.8e9)[0],
+                           dv.linha_crlh_dual(50, 0.9e9, 1.8e9)[0])
+        for k in range(2):
+            np.testing.assert_allclose(np.abs(s[k, :, 0]) ** 2, [0, 0.5, 0.5, 0], atol=1e-9)
+        # banda LH inverte o sinal do balanço de fase (livro, Fig. 4.16: -93° e +92°)
+        self.assertAlmostEqual(dv.diferenca_fase(s[0, 1, 0], s[0, 2, 0]), -dv.diferenca_fase(s[1, 1, 0], s[1, 2, 0]), 6)
+
+    def test_limites_de_banda(self):
+        from lta.core import dispositivos as dv, crlh
+        self.assertAlmostEqual(dv.fase_limite_uma_celula() / np.pi, 0.7, delta=0.01)       # livro, p. 239
+        self.assertAlmostEqual(dv.inclinacao_dual(-np.pi / 2, 1.0, 10000), np.pi / 2, places=6)   # eq. 4.11
+        self.assertGreater(dv.inclinacao_dual(-np.pi / 2, 1.0, 1), dv.inclinacao_dual(-np.pi / 2, 1.0, 2))  # eq. 4.10
+        c = crlh.balanceada_por_banda(1e9, 6e9, 50)
+        f = np.array([crlh.frequencia_transicao(c)]) * np.array([0.9999, 1.0001])
+        bl, _ = c.beta_l(f)
+        self.assertAlmostEqual((bl[1] - bl[0]) / (2 * np.pi * (f[1] - f[0])) / dv.atraso_crlh_zero(c), 1, delta=0.01)
+
+    def test_rat_race_banda_larga(self):
+        # -90° LH no lugar de 270° alarga o balanço de fase (livro, Figs. 4.1 e 4.5)
+        from lta.core import dispositivos as dv
+        f = np.linspace(0.8e9, 2.4e9, 801)
+        zr = 50 * np.sqrt(2)
+        l90 = dv.linha_convencional(zr, np.pi / 2, 1.6e9)
+        conv = dv.rat_race(f, l90, dv.linha_convencional(zr, 3 * np.pi / 2, 1.6e9))
+        art = dv.rat_race(f, l90, dv.linha_plh(zr, -np.pi / 2, 1.6e9, 3)[0])
+        banda = []
+        for s in (conv, art):
+            ok = np.abs(np.abs(dv.diferenca_fase(s[:, 1, 0], s[:, 2, 0])) - 180) < 5
+            a, b = dv.faixa_em_torno(f, ok, 1.6e9)
+            banda.append(b - a)
+        self.assertGreater(banda[1], 3 * banda[0])
+
+
 class Exportacao(unittest.TestCase):
     def test_todos_formatos(self):
         p = cm.perfil("Senoidal", 64.0, 0.01, 10)
