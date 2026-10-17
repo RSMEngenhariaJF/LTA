@@ -41,8 +41,8 @@ oEditor.CreateBox(["NAME:BoxParameters",
     "XSize:=", "110mm", "YSize:=", "15.199125mm", "ZSize:=", "h_sub+h_ar"],
     attr("Ar", "vacuum", "(128 255 255)", 0.9))
 
-def poligono(nome, pts):
-    p = [["NAME:PLPoint", "X:=", "%.6fmm" % x, "Y:=", "%.6fmm" % y, "Z:=", "h_sub"] for x, y in pts]
+def poligono(nome, pts, z="h_sub"):
+    p = [["NAME:PLPoint", "X:=", "%.6fmm" % x, "Y:=", "%.6fmm" % y, "Z:=", z] for x, y in pts]
     p.append(p[0])
     seg = [["NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", i, "NoOfPoints:=", 2]
            for i in range(len(pts))]
@@ -57,6 +57,7 @@ oEditor.CreateRectangle(["NAME:RectangleParameters", "IsCovered:=", True,
     "XStart:=", "0mm", "YStart:=", "-7.599562mm", "ZStart:=", "0mm",
     "Width:=", "110mm", "Height:=", "15.199125mm", "WhichAxis:=", "Z"],
     attr("Terra", "vacuum", "(255 200 100)"))
+
 
 oBnd = oDesign.GetModule("BoundarySetup")
 oBnd.AssignPerfectE(["NAME:PEC_Cobre", "Objects:=", ['Trilha', 'Terra'], "InfGroundPlane:=", False])

@@ -86,14 +86,15 @@ class Formulario(ttk.Frame):
         if titulo:
             alvo.pack(fill="x")
         for i, (chave, rotulo, padrao, unidade) in enumerate(campos):
-            ttk.Label(alvo, text=rotulo).grid(row=i, column=0, sticky="w", padx=(0, 4), pady=1)
+            # rótulos longos quebram em várias linhas para não empurrar os campos para fora do painel
+            ttk.Label(alvo, text=rotulo, wraplength=150).grid(row=i, column=0, sticky="w", padx=(0, 4), pady=1)
             if isinstance(padrao, (tuple, list)):
                 var = tk.StringVar(value=padrao[0])
-                w = ttk.Combobox(alvo, textvariable=var, values=list(padrao), state="readonly", width=18)
+                w = ttk.Combobox(alvo, textvariable=var, values=list(padrao), state="readonly", width=16)
                 self.tipos[chave] = str
             else:
                 var = tk.StringVar(value=str(padrao))
-                w = ttk.Entry(alvo, textvariable=var, width=12)
+                w = ttk.Entry(alvo, textvariable=var, width=10)
                 self.tipos[chave] = type(padrao)
             w.grid(row=i, column=1, sticky="ew", pady=1)
             ttk.Label(alvo, text=unidade, foreground="#555").grid(row=i, column=2, sticky="w", padx=(4, 0))

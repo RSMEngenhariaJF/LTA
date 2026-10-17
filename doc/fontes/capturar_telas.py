@@ -116,6 +116,15 @@ def main():
     ebg.calcular()
     foto("12_ebg_pers_resultados")
 
+    # ---- perdas e dispersão (EBG da Fig. 2.11 com o modelo físico completo)
+    ebg.ex_sen()
+    ebg.modelo_fis.set(True, True)
+    ebg.calcular()
+    foto("37_ebg_perdas")
+    ebg.modelo_fis.set(False, False)
+
+    capturar_novas(aplic, foto, esperar)
+
     ebg.ex_sen()
     ebg.publicar()
     nb.select(exp)
@@ -127,6 +136,100 @@ def main():
     foto("10_exportar")
 
     raiz.destroy()
+
+
+def capturar_novas(aplic, foto, esperar):
+    """Telas das ferramentas acrescentadas a partir da v1.2 (caps. 0 e 2 a 6 do livro)."""
+    from lta.core import linhas_planares as lp
+    from lta.gui import aba_dispositivos, aba_extracao, aba_filtros, aba_sintonia
+    from lta.gui.aba_substrato import PREDEFINIDOS
+
+    def ir(cls):
+        aplic.mostrar(cls)
+        aplic.estado.msg("")   # não deixa a mensagem de outra ferramenta na barra de status
+        return aplic.ferramenta(cls)
+
+    # Cap. 0: linhas convencionais (RO4003C)
+    aplic.estado.definir_substrato(PREDEFINIDOS["Rogers RO4003C 0.813 mm"])
+    lin = ir(app.AbaLinhas)
+    lin.form.set(dict(tipo=lp.TIPOS[3], elemento="Trecho de linha", modo="Síntese: Z0 → dimensões", z0=50,
+                      g=0.2, lterra=3, f0=2.45, fase=90, pvia=1.5, rvia=0.2))
+    lin.calcular()
+    lin.ver_estrutura()
+    foto("17_linhas_gcpw_estrutura")
+    lin.form.set(dict(tipo=lp.TIPOS[0], elemento="Transformador λ/4", z0=50, z2=100, fmax=7.5))
+    lin.calcular()
+    foto("18_linhas_transformador_resultados")
+
+    # Cap. 2: Floquet e aplicações EBG
+    flo = ir(app.AbaFloquet)
+    flo.ex_ebg()
+    foto("19_floquet")
+    apl = ir(app.AbaAplicacoesEBG)
+    apl.ex_cdl()
+    foto("20_cdl")
+    apl.ex_res()
+    foto("21_ressonador")
+
+    # Cap. 3: metamateriais
+    cr = ir(app.AbaCRLH)
+    cr.ex_desbalanceada()
+    foto("22_crlh")
+    cl = ir(app.AbaCLLoaded)
+    cl.exemplo()
+    cl.ver_estrutura()
+    foto("23_cl_loaded_estrutura")
+    cs = ir(app.AbaCSRR)
+    cs.ex_balanceada()
+    cs.ver_estrutura()
+    foto("24_csrr_estrutura")
+    cs.calcular()
+    foto("25_csrr_resultados")
+    ex = ir(app.AbaExtracao)
+    ex.fonte.set(next(iter(aba_extracao.EXEMPLOS)))
+    ex._fonte_mudou()
+    ex.extrair()
+    foto("26_extracao")
+
+    # Cap. 4: aplicações
+    mb = ir(app.AbaMultibanda)
+    mb.ex_quad()
+    foto("27_multibanda_quad")
+    dv = ir(app.AbaDispositivos)
+    dv.ex_ratrace()
+    foto("28_ratrace")
+    ft = ir(app.AbaFiltros)
+    ft.ex_hibrido()
+    foto("29_filtro_hibrido")
+
+    # Cap. 5: sintonizáveis e não lineares
+    si = ir(app.AbaSintonia)
+    si.ex_vlsrr()
+    foto("30_vlsrr")
+    si.ex_crlh()
+    foto("31_defasador")
+    nlt = ir(app.AbaNLTL)
+    nlt.ex_pulso()
+    foto("32_nltl_pulso")
+
+    # Cap. 6: outras linhas avançadas
+    di = ir(app.AbaDiferencial)
+    di.form.set({"preset": "DS-CSRR 3 GHz"})
+    di._carregar()
+    di.calcular()
+    foto("33_diferencial")
+    mi = ir(app.AbaMIW)
+    mi.exemplo()
+    foto("34_miw")
+    sw = ir(app.AbaSIW)
+    sw.calcular()
+    sw.ver_estrutura()
+    foto("35_siw_estrutura")
+    nf = ir(app.AbaNaoFoster)
+    nf.exemplo()
+    foto("36_naofoster")
+    aplic.estado.definir_substrato(PREDEFINIDOS["Rogers RO3010 (livro)"])
+    _ = (aba_dispositivos, aba_filtros, aba_sintonia, esperar)
 
 
 if __name__ == "__main__":

@@ -385,7 +385,7 @@ Os parâmetros S vêm de **modelos de circuito ideais**: sem perdas, sem descont
 
 ## 6. Material didático em Word
 
-O arquivo `doc/Manual_LTA_Linhas_Periodicas.docx` (com PDF ao lado) é uma aula sobre o capítulo 2 do livro, com teoria, equações, capturas de tela do software, impactos de cada parâmetro e exemplos de aplicação resolvidos. Ele é gerado por script, para acompanhar a evolução do software:
+O arquivo `doc/Manual_LTA_Linhas_Periodicas.docx` (com PDF ao lado) é uma aula sobre os capítulos 1 a 6 do livro (linhas convencionais, periódicas, metamateriais, aplicações, sintonizáveis e não lineares e outras linhas avançadas), com teoria, equações, capturas de tela do software, impactos de cada parâmetro e exemplos de aplicação resolvidos. Ele é gerado por script, para acompanhar a evolução do software:
 
 ```
 python doc/fontes/capturar_telas.py   # abre o LTA, roda os exemplos e captura as telas (doc/fontes/img)

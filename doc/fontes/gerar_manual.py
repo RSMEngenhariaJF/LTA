@@ -6,6 +6,7 @@ Uso (na raiz do projeto):
 Requer: python-docx, latex2mathml, Microsoft Office (conversor de equações) e,
 para atualizar o sumário e gerar o PDF, pywin32.
 """
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -17,6 +18,7 @@ AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parents[1]
 sys.path.insert(0, str(AQUI))
 
+import capitulos_novos as novos  # noqa: E402
 import figuras  # noqa: E402
 from docx_util import AZUL, CINZA, Manual  # noqa: E402
 
@@ -40,7 +42,7 @@ def capa(m):
         d.add_paragraph()
     t = d.add_paragraph()
     t.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = t.add_run("Linhas de Transmissão Artificiais Periódicas")
+    r = t.add_run("Linhas de Transmissão Convencionais e Artificiais")
     r.bold, r.font.size, r.font.color.rgb = True, Pt(26), AZUL
     s = d.add_paragraph()
     s.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -49,14 +51,14 @@ def capa(m):
     d.add_paragraph()
     s = d.add_paragraph()
     s.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = s.add_run("Material didático em formato de aula, baseado no capítulo 2 de F. Martín, "
+    r = s.add_run("Material didático em formato de aula, baseado nos capítulos 1 a 6 de F. Martín, "
                   "Artificial Transmission Lines for RF and Microwave Applications (Wiley, 2015)")
     r.italic, r.font.size = True, Pt(11)
     for _ in range(8):
         d.add_paragraph()
     info = [("Instituição", "Instituto Hardware BR (HBR)"),
             ("Classificação", "Uso interno – P&D"),
-            ("Versão", f"1.0 – rascunho para revisão ({date.today().strftime('%m/%Y')})")]
+            ("Versão", f"2.0 – rascunho para revisão, LTA v1.8 ({date.today().strftime('%m/%Y')})")]
     for k, v in info:
         par = d.add_paragraph()
         par.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -109,18 +111,31 @@ def cap1(m):
              "espúrios;",
              "projetar uma linha EBG (*electromagnetic bandgap*) por modos acoplados para rejeitar uma "
              "faixa de frequência;",
+             "projetar linhas metamateriais CRLH e com ressonadores (CSRR) e extrair seus parâmetros de "
+             "simulações ou medições;",
+             "aplicar linhas artificiais em dispositivos dual-band e multibanda, híbridas, filtros, antenas "
+             "*leaky-wave*, linhas sintonizáveis e não lineares, linhas diferenciais, SIW e linhas de atraso;",
              "usar a ferramenta **LTA** para fazer esses cálculos, visualizar a estrutura e exportá-la para "
              "KiCad, Altium, ADS, HFSS e CST."])
     m.h("1.2  Como este material está organizado", 2)
-    m.p("O capítulo 2 revisa, de forma breve, os parâmetros de uma linha de transmissão e da microstrip. "
-        "O capítulo 3 apresenta a ideia de estrutura periódica (teorema de Floquet e condição de Bragg). Os "
-        "capítulos 4, 5 e 6 tratam, cada um, de uma ferramenta de análise e de um tipo de estrutura: a "
-        "célula ABCD genérica, a linha com carga capacitiva e a linha EBG analisada por modos acoplados. "
-        "Cada um desses capítulos termina com uma seção sobre **o que a estrutura modifica e quais os "
-        "impactos de cada parâmetro**, com aplicações descritas na literatura, e mostra a aba "
-        "correspondente do software. O capítulo 7 descreve o fluxo de trabalho e a exportação. O capítulo 8 "
-        "traz exemplos de aplicação resolvidos passo a passo e o capítulo 9 discute limitações e próximos "
-        "passos.")
+    m.p("O material acompanha os capítulos 1 a 6 do livro, na ordem dos grupos do menu **Ferramentas** do "
+        "LTA:")
+    m.lista(["**Capítulo 2** (livro, cap. 1): parâmetros de uma linha de transmissão, microstrip e as demais "
+             "linhas planares convencionais (stripline, CPW, GCPW e CPS), perdas e dispersão. É a base das "
+             "linhas artificiais e corresponde ao grupo *Cap. 0* do software.",
+             "**Capítulos 3 a 6** (livro, cap. 2): estruturas periódicas (Floquet, Bragg e harmônicos "
+             "espaciais), a célula ABCD, a linha com carga capacitiva e a linha EBG analisada por modos "
+             "acoplados, com suas aplicações. Cada capítulo termina com uma seção sobre **o que a estrutura "
+             "modifica e quais os impactos de cada parâmetro**.",
+             "**Capítulo 7** (livro, cap. 3): linhas metamateriais CRLH, linhas com CSRR e extração de "
+             "parâmetros.",
+             "**Capítulo 8** (livro, cap. 4): dispositivos dual-band e multibanda, híbridas, divisores, "
+             "filtros e antenas *leaky-wave*.",
+             "**Capítulo 9** (livro, cap. 5): linhas sintonizáveis e não lineares.",
+             "**Capítulo 10** (livro, cap. 6): linhas diferenciais, linhas de atraso MIW/EIW, SIW e linhas "
+             "com capacitores negativos.",
+             "**Capítulos 11 a 13:** fluxo de trabalho e exportação, exemplos de aplicação resolvidos passo a "
+             "passo, validação, limitações e próximos passos."])
     m.nota("a teoria é apresentada de forma resumida, apenas para dar o fio da meada. Para cada "
            "assunto indicamos a seção e as páginas do livro de F. Martín em que o conteúdo é desenvolvido "
            "com mais profundidade. As equações citadas como \"Martín (2.21)\" seguem a numeração do livro.",
@@ -671,55 +686,79 @@ def cap6_personalizado(m, F):
 
 
 # =============================================================================
-def cap7(m):
-    m.h("7  Fluxo de trabalho no LTA e exportação")
-    m.h("7.0  Navegação", 2)
+def cap11(m):
+    m.h("11  Fluxo de trabalho no LTA e exportação")
+    m.h("11.1  Navegação", 2)
     m.p("A janela mostra uma ferramenta por vez, escolhida pela barra de menus. Em **Ferramentas**, as "
-        "ferramentas estão agrupadas por capítulo do livro (por enquanto, *Cap. 2 – Linhas periódicas*: "
-        "Célula ABCD, Carga capacitiva e EBG / Modos acoplados). **Arquivo** dá acesso ao substrato e à pasta "
-        "de saídas; **Exportar** abre a ferramenta de exportação; **Ajuda** abre este material, o manual "
-        "técnico e a lista de atalhos. Abaixo do menu ficam a barra do **substrato ativo**, sempre visível e "
-        "com o botão *Alterar…*, e o título da ferramenta atual. Os atalhos **Ctrl+1**, **Ctrl+2** e "
-        "**Ctrl+3** alternam entre as ferramentas do capítulo 2, e **Ctrl+E** abre a exportação. Cada "
-        "ferramenta guarda seus valores ao trocar de tela.")
+        "ferramentas estão agrupadas por capítulo do livro:")
+    m.tabela(["Grupo do menu", "Ferramentas", "Neste material"],
+             [["Cap. 0 – Linhas convencionais", "Linhas de transmissão convencionais", "Seção 2.3"],
+              ["Cap. 2 – Linhas periódicas", "Célula ABCD, Carga capacitiva, EBG / Modos acoplados, "
+               "Floquet, Aplicações EBG (CDL, ressonador)", "Capítulos 3 a 6"],
+              ["Cap. 3 – Metamateriais", "CRLH / D-CRLH, CRLH microstrip (CL-loaded), Linha CSRR + gap, "
+               "Extração de parâmetros", "Capítulo 7"],
+              ["Cap. 4 – Aplicações", "Linhas dual-band e multibanda, Híbridas e divisores, Filtros",
+               "Capítulo 8"],
+              ["Cap. 5 – Sintonizáveis e não lineares", "Linhas sintonizáveis, Linha não linear (NLTL)",
+               "Capítulo 9"],
+              ["Cap. 6 – Outras linhas avançadas", "Linha diferencial, Linhas de atraso MIW/EIW, SIW, "
+               "Linha com capacitores negativos", "Capítulo 10"]],
+             [4.6, 8.0, 3.4], "11.1", "Grupos de ferramentas do LTA.")
+    m.p("**Arquivo** dá acesso ao substrato e à pasta de saídas; **Exportar** abre a ferramenta de "
+        "exportação; **Ajuda** abre este material, o manual técnico e a lista de atalhos. Abaixo do menu "
+        "ficam a barra do **substrato ativo**, sempre visível e com o botão *Alterar…*, e o título da "
+        "ferramenta atual. Os atalhos **Ctrl+1** a **Ctrl+9** abrem as nove primeiras ferramentas, na ordem "
+        "do menu, e **Ctrl+E** abre a exportação. Cada ferramenta guarda seus valores ao trocar de tela.")
     m.p("O fluxo sugerido é:")
     m.lista(["**Substrato:** escolher ou digitar εr, h, espessura de cobre e tangente de perdas. Todas as "
              "ferramentas passam a usar esses valores.",
-             "**Especificar** a estrutura na aba correspondente (Célula ABCD, Carga capacitiva ou EBG). Os "
-             "botões *Exemplo* carregam os casos do livro e são um bom ponto de partida.",
+             "**Especificar** a estrutura na ferramenta correspondente. Os botões *Exemplo* carregam os "
+             "casos do livro e são um bom ponto de partida.",
              "**Observar a pré-visualização** enquanto edita: a sub-aba *Estrutura* é redesenhada cerca de "
              "0,4 s depois que você para de digitar. Use *Fixar referência* para comparar várias alterações "
              "contra uma versão de partida.",
-             "**Calcular** para ver dispersão, impedância de Bloch e parâmetros S na sub-aba *Resultados*.",
+             "**Calcular** para ver dispersão, impedância de Bloch, parâmetros S e demais resultados na "
+             "sub-aba *Resultados*.",
              "**Enviar para exportação** e, na aba *Exportar*, gerar os arquivos para a ferramenta desejada.",
-             "**Simular em EM** (HFSS, CST, ADS Momentum), otimizar as dimensões e só então fabricar e medir."],
+             "**Simular em EM** (HFSS, CST, ADS Momentum) e, nas estruturas com ressonadores, **extrair** "
+             "os parâmetros do resultado (Seção 7.4) para corrigir a geometria; só então fabricar e medir."],
             numerada=True)
-    m.h("7.1  A pré-visualização da estrutura", 2)
+    m.h("11.2  A pré-visualização da estrutura", 2)
     m.p("A pré-visualização tem três vistas: a placa inteira, com dimensões totais e a célula do zoom "
         "destacada; o zoom da célula unitária, com cotas identificadas por letras e o quadro de valores; e o "
-        "corte transversal A, com substrato, plano de terra (e abertura do furo, se houver) e trilha. A "
+        "corte transversal A, com substrato, plano de terra (e abertura de furos e fendas, se houver), todo "
+        "o cobre do topo que cruza a seção e as vias. Furos e fendas do terra, como os anéis do CSRR, "
+        "aparecem tracejados na vista superior. A "
         "espessura do cobre é exagerada nessa vista para ficar visível. A versão anterior aparece tracejada e "
         "a caixa inferior lista as alterações. Especificações inviáveis aparecem em vermelho sobre a última "
         "estrutura válida, e trilhas mais finas que cerca de 0,1 mm geram um alerta de fabricabilidade.")
-    m.h("7.2  Exportação", 2)
-    m.figura(IMG / "tela_10_exportar.png", "7.1",
+    m.h("11.3  Exportação", 2)
+    m.figura(IMG / "tela_10_exportar.png", "11.1",
              "Aba Exportar: seleção da estrutura, formatos de layout, faixa de simulação, pasta de saída "
              "(relativa ao projeto) e exportação dos parâmetros S.")
     m.tabela(["Arquivo", "Ferramenta", "Como abrir"],
              [["`.kicad_pcb`", "KiCad 6/7/8; Altium", "Abrir no editor de PCB e pressionar B para preencher "
                "o terra. No Altium: File › Import Wizard › KiCad"],
               ["`.dxf` (R12)", "Altium, ADS, HFSS, CST", "Importar mapeando as camadas `TOPO_COBRE`, `TERRA`, "
-               "`TERRA_FUROS` e `PLACA`"],
+               "`TERRA_FUROS`, `VIAS` e `PLACA`"],
               ["`.gtl` / `.gbl` / `.gko`", "Altium (CAMtastic), fabricação", "Gerber RS-274X em mm"],
-              ["`.gds`", "ADS, HFSS, CST", "GDSII; camadas 1 (topo), 2 (terra), 3 (furos), 10 (placa)"],
+              ["`_furos.drl`", "Fabricação, Altium", "Furação Excellon (mm) das vias metalizadas; só existe "
+               "se houver vias"],
+              ["`.gds`", "ADS, HFSS, CST", "GDSII; camadas 1 (topo), 2 (terra), 3 (furos e fendas), 4 (vias), "
+               "10 (placa)"],
               ["`_hfss.py`", "Ansys HFSS / AEDT", "Tools › Run Script; cria projeto, variáveis `h_sub` e "
                "`h_ar`, portas de onda, radiação, setup e varredura"],
               ["`_cst.bas`", "CST Studio Suite", "Macro VBA; parâmetros h, t, er e tand editáveis"],
               ["`.s2p` / `_S.csv`", "ADS, AWR, planilhas", "Parâmetros S do modelo de circuito (Touchstone "
                "v1, RI, GHz) e CSV com dB e fase"]],
-             [3.2, 3.8, 9.0], "7.1", "Formatos exportados pelo LTA.")
-    m.p("Os parâmetros S exportados vêm dos **modelos ideais** usados nos cálculos (sem perdas, sem "
-        "descontinuidades e sem radiação). Eles são úteis para estudos de sistema, por exemplo carregando o "
+             [3.2, 3.8, 9.0], "11.2", "Formatos exportados pelo LTA.")
+    m.p("Furos e fendas do terra (anéis do CSRR, furos da EBG) vão para a camada `TERRA_FUROS`; no KiCad "
+        "viram áreas de exclusão do preenchimento do terra e, no HFSS e no CST, são subtraídos do plano. As "
+        "vias (CRLH CL-loaded, GCPW, SIW, stubs em curto) são cilindros condutores do terra ao topo. Nas "
+        "linhas sem plano de terra inferior (CPW e CPS), a camada `TERRA` é omitida, e o arquivo LEIA-ME "
+        "gerado junto indica como ajustar as portas.")
+    m.p("Os parâmetros S exportados vêm dos **modelos de circuito** usados nos cálculos (sem "
+        "descontinuidades nem radiação e, salvo quando o modelo físico está ligado, sem perdas). Eles são úteis para estudos de sistema, por exemplo carregando o "
         ".s2p num bloco S2P do ADS e cascateando com o restante do circuito, mas não substituem o resultado "
         "de simulação eletromagnética ou de medição.")
     m.nota("os scripts para HFSS e CST e o arquivo do KiCad seguem a sintaxe documentada dessas "
@@ -728,14 +767,14 @@ def cap7(m):
 
 
 # =============================================================================
-def cap8(m, F):
+def cap12(m, F):
     r, h, mi = F["refletor"], F["harmonico"], F["mini"]
-    m.h("8  Exemplos de aplicação resolvidos")
+    m.h("12  Exemplos de aplicação resolvidos")
     m.p("Os três exemplos a seguir mostram como os conceitos da aula se traduzem em decisões de projeto. "
         "Todos os números foram calculados com o núcleo do LTA e podem ser reproduzidos nas abas "
         "correspondentes.")
     # ---- refletor
-    m.h("8.1  Refletor (rejeita-faixa) a 2,45 GHz em FR-4", 2)
+    m.h("12.1  Refletor (rejeita-faixa) a 2,45 GHz em FR-4", 2)
     m.p("**Especificação.** Rejeitar a faixa ISM de 2,45 GHz com |S₂₁| ≤ −30 dB no centro, numa linha de "
         "50 Ω em FR-4 (εr = 4,4, h = 1,6 mm). Por fabricação, a impedância local deve ficar entre cerca de "
         "33 e 75 Ω, ou seja, Z_max/Z_ref = 1,5.")
@@ -751,14 +790,14 @@ def cap8(m, F):
         f"{n(r['wmin'], 2)} e {n(r['wmax'], 2)} mm, f_max = {n(r['fmax'], 2)} GHz, "
         f"|S₂₁|_min = {n(r['s21'], 1)} dB (analítico) e {n(r['s21_num'], 1)} dB (CMT numérico), "
         f"banda de {n(r['bw'], 2)} GHz.")
-    m.figura(IMG / "fig_ex_refletor.png", "8.1", "Resposta do refletor projetado (CMT numérico).", 12)
+    m.figura(IMG / "fig_ex_refletor.png", "12.1", "Resposta do refletor projetado (CMT numérico).", 12)
     m.p("**Discussão.** O comprimento de quase um quarto de metro é a lição do exemplo: EBGs em frequências "
         "baixas são longas. As saídas são aceitar Z_max/Z_ref maior (menos períodos, trilhas mais "
         "extremas), dobrar a linha em meandro, como na Fig. 2.18 do livro, ou usar furos no terra, que "
         "permitem perturbação mais forte. Para as faixas de 5–6 GHz, o mesmo projeto fica com menos da "
         "metade do comprimento.")
     # ---- harmonico
-    m.h("8.2  Supressão do segundo harmônico de um oscilador", 2)
+    m.h("12.2  Supressão do segundo harmônico de um oscilador", 2)
     m.p("**Especificação.** Um oscilador de 2,45 GHz em RO4003C (εr = 3,55, h = 0,813 mm) tem segundo "
         "harmônico forte em 4,9 GHz. Deseja-se uma seção EBG na saída que atenue 2f₀ sem afetar f₀, nos "
         "moldes do exemplo da antena ativa do livro (pp. 95–99).")
@@ -768,7 +807,7 @@ def cap8(m, F):
     m.p(f"**Resultado.** Em 2f₀: |S₂₁| = {n(h['s21_2f0'], 1)} dB. Em f₀: |S₂₁| = {n(h['s21_f0'], 2)} dB e "
         f"|S₁₁| = {n(h['s11_f0'], 1)} dB. A banda rejeitada tem {n(h['bw'], 2)} GHz e fica longe da "
         "fundamental.")
-    m.figura(IMG / "fig_ex_harmonico.png", "8.2",
+    m.figura(IMG / "fig_ex_harmonico.png", "12.2",
              f"Seção EBG para supressão de 2f₀: rejeição de cerca de {n(-h['s21_2f0'], 0)} dB em 4,9 GHz, perda pequena em "
              "2,45 GHz e nenhuma banda em 3f₀ (perfil senoidal).", 12)
     m.p(f"**Discussão.** A reflexão de {n(h['s11_f0'], 1)} dB em f₀ vem das ondulações da banda passante, típicas de "
@@ -777,7 +816,7 @@ def cap8(m, F):
         "(Hamming) para reduzir as ondulações. Se também fosse preciso atenuar 3f₀, um perfil com duas "
         "senoides somadas, sintonizadas em 2f₀ e 3f₀, resolveria (pp. 88–91 e 97).")
     # ---- miniaturizacao
-    m.h("8.3  Miniaturização de uma linha de 90° a 1 GHz", 2)
+    m.h("12.3  Miniaturização de uma linha de 90° a 1 GHz", 2)
     m.p("**Especificação.** Uma rede de casamento usa um trecho λ/4 de 50 Ω a 1 GHz em RO4003C. Deseja-se "
         f"reduzir seu comprimento com uma linha *slow-wave* de {mi['n']} células, mantendo 50 Ω e afastando "
         f"a primeira espúria para f_s = {n(mi['fs'] / 1e9, 0)} GHz.")
@@ -793,7 +832,7 @@ def cap8(m, F):
               ["Fase a 1 GHz", "90°", f"{n(mi['fase_total'], 1)}° (modelo distribuído)"],
               ["|S₁₁| a 1 GHz (portas de 50 Ω)", "–", f"{n(mi['s11'], 1)} dB"],
               ["Banda espúria", "2 GHz (λ/2)", f"corte em {n(mi['fc'], 1)} GHz; espúria só perto de 12 GHz"]],
-             [5.4, 5.0, 5.6], "8.1", "Comparação entre a linha λ/4 convencional e a versão slow-wave.")
+             [5.4, 5.0, 5.6], "12.1", "Comparação entre a linha λ/4 convencional e a versão slow-wave.")
     m.p(f"**Discussão.** A redução de comprimento é de cerca de **{n(mi['reducao'], 0)}%**, em linha com os "
         "30% do exemplo CPW do livro. O ganho vem acompanhado de largura: os patches ocupam cerca de "
         f"{n(mi['w_patch'], 1)} mm de largura. A linha também passou a ser um passa-baixas, o que pode ser "
@@ -803,50 +842,96 @@ def cap8(m, F):
 
 
 # =============================================================================
-def cap9(m):
-    m.h("9  Limitações, validação e próximos passos")
-    m.h("9.1  Validação do software", 2)
+def tabela_validacao():
+    """Linhas da tabela de validação do manual técnico (doc/01_manual.md), mantidas em um só lugar."""
+    texto = (RAIZ / "doc" / "01_manual.md").read_text(encoding="utf-8")
+    secao = texto[texto.index("## 4. Validação"):texto.index("## 5. Limitações")]
+    linhas, notas = [], []
+    for lin in secao.splitlines():
+        if lin.startswith("| ") and not lin.startswith("| Item"):
+            cel = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", lin)[1:-1]]
+            linhas.append([c.replace("\\*", "*") for c in cel])
+        elif lin.startswith("(\\*"):
+            notas.append(lin.replace("\\*", "*"))
+    return linhas, notas
+
+
+def cap13(m):
+    m.h("13  Limitações, validação e próximos passos")
+    m.h("13.1  Validação do software", 2)
     m.p("O LTA possui testes automatizados (`python -m unittest discover testes`) que comparam os cálculos "
-        "com valores publicados no livro:")
-    m.tabela(["Item", "Livro", "LTA"],
-             [["W de 50 Ω em RO3010 (h = 1,27 mm)", "1,2 mm", "1,186 mm"],
-              ["Z₀ máx/mín, perfil senoidal |K₁| = 0,64 cm⁻¹", "75 / 33,3 Ω", "75,1 / 33,3 Ω"],
-              ["|S₂₁|min senoidal (Eq. 6.5)", "−49,6 dB", "−49,6 dB"],
-              ["Banda rejeitada senoidal (Eq. 6.6)", "2,55 GHz", "2,61 GHz"],
-              ["|S₂₁|min quadrada, n = 1, 3, 5", "−49,3 / −12,5 / −5,7 dB", "−49,3 / −12,5 / −5,7 dB"],
-              ["f_max (Eq. 6.5)", "5,66 GHz", "5,74 GHz"],
-              ["Exemplo da Fig. 2.34: L, C, C_ls", "3,1 nH; 0,17 pF; 1,2 pF", "3,30 nH; 0,157 pF; 1,31 pF"]],
-             [7.0, 4.5, 4.5], "9.1", "Comparação com valores publicados em Martín (2015).")
-    m.h("9.2  Limitações conhecidas", 2)
-    m.lista(["Microstrip quase-estática (Hammerstad-Jensen): espessura de cobre nula, sem dispersão e sem "
-             "perdas nos cálculos de S.",
+        "com valores publicados no livro e com casos-limite de solução conhecida. A tabela a seguir resume "
+        "as comparações, na ordem dos capítulos:")
+    linhas, notas = tabela_validacao()
+    m.tabela(["Item", "Livro / referência", "LTA"], linhas, [7.4, 4.3, 4.3], "13.1",
+             "Comparação com valores publicados em Martín (2015) e em outras referências.", fonte=8)
+    for nota in notas:
+        m.p(nota)
+    m.p("As maiores diferenças têm causa identificada: o livro obtém εeff e alguns valores por simulação "
+        "eletromagnética ou já inclui ajustes de layout (Tabela 4.2, Fig. 2.34); na Fig. 6.32 os números "
+        "citados não seguem das próprias relações do texto; e no multiplicador NLTL as terminações não são "
+        "informadas.")
+    m.h("13.2  Limitações conhecidas", 2)
+    m.lista(["Microstrip: Z₀ e εeff com espessura de cobre nula. Perdas e dispersão são opcionais e não "
+             "incluem radiação, ondas de superfície nem a perda dos patches. Nas linhas coplanares, a perda "
+             "de condutor não é calculada.",
              "Modos acoplados e cascata ABCD desprezam descontinuidades (degraus), radiação e acoplamento "
-             "a modos de ordem superior.",
-             "A geometria da linha com carga capacitiva é estimativa inicial (Eq. 5.7), a ser otimizada em "
-             "simulador eletromagnético.",
+             "a modos de ordem superior. O diagrama de Floquet indica onde há radiação, mas não quanto.",
+             "A geometria da linha com carga capacitiva e as dimensões do Capítulo 7 (raio do CSRR, "
+             "interdigital, stub) são estimativas iniciais, com erro de 20% ou mais, a corrigir por EM e "
+             "extração. Os modelos de circuito valem até pouco acima da ressonância dos ressonadores.",
+             "Linhas em CPW com SRR, OSRR e OCSRR: só a extração está implementada.",
+             "Capítulo 8: dispositivos e filtros são simulados com circuitos ideais (inversores ideais, sem "
+             "perdas nem parasitas). O α/k₀ da antena *leaky-wave* deve vir de simulação EM.",
+             "Capítulo 9: o VLSRR usa só o acoplamento magnético; a NLTL não inclui perdas, e as terminações "
+             "padrão valem √(L/C₀).",
+             "Capítulo 10: linhas diferenciais sem acoplamento magnético entre linha e CSRR (como no livro); "
+             "MIW, SIW e ENZ sem perdas de condutor; transições do SIW como estimativa inicial.",
              "EBG com furos no terra: apenas geometria e estimativa de Bragg.",
-             "Os arquivos para HFSS, CST e KiCad ainda precisam ser testados nas ferramentas instaladas."])
-    m.h("9.3  Próximos passos sugeridos", 2)
-    m.p("O capítulo 2 do livro prepara o terreno para os capítulos seguintes, que tratam das linhas "
-        "metamateriais. A aba Célula ABCD já calcula a dispersão de células CRLH (Ls, Cs, Lp, Cp), base dos "
-        "componentes de dupla banda e das antenas *leaky-wave* (" + LIVRO + ", seções 3.4 e 4.2, pp. 149–"
-        "162 e 215–290). Extensões naturais do software são: projeto de células CRLH balanceadas, síntese "
-        "inversa de perfis EBG (da resposta desejada para K(z)) e inclusão de perdas de condutor e "
-        "dielétrico.")
+             "Os scripts HFSS e CST modelam o cobre como condutor perfeito, e eles e o arquivo do KiCad ainda "
+             "precisam ser testados nas ferramentas instaladas."])
+    m.h("13.3  Próximos passos sugeridos", 2)
+    m.lista(["**Validação eletromagnética** das geometrias geradas (HFSS ou CST), comparando com os modelos "
+             "de circuito e alimentando a extração de parâmetros.",
+             "**Space mapping agressivo** (Apêndice H do livro), para automatizar a correção da geometria "
+             "a partir da extração.",
+             "**Modelo de CPW** integrado ao projeto de linhas com SRR, OSRR e OCSRR (capítulos 3 e 4 do "
+             "livro).",
+             "Exportação de condutividade e rugosidade para os scripts de HFSS e CST.",
+             "Modelo de linhas acopladas, para o filtro *wiggly-line* e para acopladores."])
 
 
 def referencias(m):
     m.h("Referências")
     m.lista(["MARTÍN, F. **Artificial Transmission Lines for RF and Microwave Applications**. Hoboken: "
              "John Wiley & Sons, 2015. (Wiley Series in Microwave and Optical Engineering). "
-             "ISBN 978-1-118-48760-0. Capítulos 1 e 2.",
+             "ISBN 978-1-118-48760-0. Capítulos 1 a 6 e apêndices G e H.",
              "HAMMERSTAD, E.; JENSEN, O. Accurate Models for Microstrip Computer-Aided Design. In: **IEEE "
              "MTT-S International Microwave Symposium Digest**, 1980, p. 407–409.",
-             "POZAR, D. M. **Microwave Engineering**. 4. ed. Hoboken: John Wiley & Sons, 2012. Seção 4.4 "
-             "(matriz ABCD e conversão para parâmetros S)."])
-    m.p("As referências originais dos exemplos de aplicação (refletores, ressonadores de Bragg, filtros "
-        "*wiggly-line*, antena ativa e linhas de atraso chirpadas) estão listadas ao final do capítulo 2 do "
-        "livro, pp. 114–118.")
+             "POZAR, D. M. **Microwave Engineering**. 4. ed. Hoboken: John Wiley & Sons, 2012. Seções 3.7 "
+             "e 4.4 (stripline, matriz ABCD e conversão para parâmetros S).",
+             "COHN, S. B. Characteristic Impedance of the Shielded-Strip Transmission Line. **IRE Transactions "
+             "on Microwave Theory and Techniques**, v. 2, n. 2, p. 52–57, 1954.",
+             "SIMONS, R. N. **Coplanar Waveguide Circuits, Components, and Systems**. New York: John Wiley & "
+             "Sons, 2001.",
+             "KIRSCHNING, M.; JANSEN, R. H. Accurate Model for Effective Dielectric Constant of Microstrip "
+             "with Validity up to Millimetre-Wave Frequencies. **Electronics Letters**, v. 18, n. 6, "
+             "p. 272–273, 1982.",
+             "PUCEL, R. A.; MASSÉ, D. J.; HARTWIG, C. P. Losses in Microstrip. **IEEE Transactions on "
+             "Microwave Theory and Techniques**, v. 16, n. 6, p. 342–350, 1968.",
+             "BAHL, I. **Lumped Elements for RF and Microwave Circuits**. Boston: Artech House, 2003.",
+             "GOLDFARB, M. E.; PUCEL, R. A. Modeling Via Hole Grounds in Microstrip. **IEEE Microwave and "
+             "Guided Wave Letters**, v. 1, n. 6, p. 135–137, 1991.",
+             "DESLANDES, D.; WU, K. Accurate Modeling, Wave Mechanisms, and Design Considerations of a "
+             "Substrate Integrated Waveguide. **IEEE Transactions on Microwave Theory and Techniques**, "
+             "v. 54, n. 6, p. 2516–2526, 2006.",
+             "JACKSON, D. R.; OLINER, A. A. Leaky-Wave Antennas. In: BALANIS, C. A. (ed.). **Modern Antenna "
+             "Handbook**. Hoboken: John Wiley & Sons, 2008. cap. 7.",
+             "MATTHAEI, G. L.; YOUNG, L.; JONES, E. M. T. **Microwave Filters, Impedance-Matching Networks, "
+             "and Coupling Structures**. New York: McGraw-Hill, 1964."])
+    m.p("As referências originais dos exemplos de aplicação de cada capítulo (refletores, ressonadores, "
+        "linhas de atraso, dispositivos dual-band, filtros, antenas, linhas sintonizáveis e não lineares, SIW "
+        "e linhas diferenciais) estão listadas ao final do capítulo correspondente do livro.")
 
 
 def main():
@@ -855,18 +940,25 @@ def main():
     faltando = [p.name for p in IMG.glob("tela_*.png")]
     if len(faltando) < 10:
         print("Aviso: capturas de tela ausentes; rode doc/fontes/capturar_telas.py antes.")
-    m = Manual("LTA – Linhas de Transmissão Artificiais Periódicas | Material didático")
+    m = Manual("LTA – Linhas de Transmissão Convencionais e Artificiais | Material didático")
     capa(m)
     m.sumario()
     cap1(m)
     cap2(m, F)
+    novos.cap2_extras(m)
     cap3(m, F)
+    novos.cap3_extras(m)
     cap4(m, F)
     cap5(m, F)
     cap6(m, F)
-    cap7(m)
-    cap8(m, F)
-    cap9(m)
+    novos.cap6_extras(m)
+    novos.cap7_metamateriais(m)
+    novos.cap8_aplicacoes(m)
+    novos.cap9_sintonia(m)
+    novos.cap10_avancadas(m)
+    cap11(m)
+    cap12(m, F)
+    cap13(m)
     referencias(m)
     m.cabecalho_rodape()
     m.salvar(SAIDA)
