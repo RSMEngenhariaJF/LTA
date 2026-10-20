@@ -9,23 +9,34 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from .aba_acopladas import AbaAcopladas
+from .aba_amplificador import AbaAmplificador
 from .aba_aplicacoes_ebg import AbaAplicacoesEBG
+from .aba_atenuadores import AbaAtenuadores
+from .aba_balun import AbaBalun
 from .aba_carga import AbaCarga
+from .aba_caracterizacao import AbaCaracterizacao
+from .aba_casamento import AbaCasamento
 from .aba_cl_loaded import AbaCLLoaded
+from .aba_conectores import AbaConectores
 from .aba_celula import AbaCelula
 from .aba_crlh import AbaCRLH
 from .aba_diferencial import AbaDiferencial
 from .aba_dispositivos import AbaDispositivos
 from .aba_csrr import AbaCSRR
+from .aba_dgs import AbaDGS
 from .aba_ebg import AbaEBG
 from .aba_exportar import AbaExportar
 from .aba_extracao import AbaExtracao
 from .aba_filtros import AbaFiltros
+from .aba_filtros_linhas import AbaFiltrosLinhas
 from .aba_floquet import AbaFloquet
 from .aba_linhas import AbaLinhas
 from .aba_miw import AbaMIW
 from .aba_multibanda import AbaMultibanda
 from .aba_nltl import AbaNLTL
+from .aba_ressonadores import AbaRessonadores
+from .aba_robustez import AbaRobustez
 from .aba_sintonia import AbaSintonia
 from .aba_siw import AbaNaoFoster, AbaSIW
 from .aba_substrato import AbaSubstrato
@@ -33,12 +44,15 @@ from .comum import PASTA_SAIDAS, RAIZ, Estado
 
 # (nome do grupo no menu, [ferramentas])
 GRUPOS = [
-    ("Cap. 0 – Linhas convencionais", [AbaLinhas]),
+    ("Cap. 0 – Linhas convencionais (Pozar)", [AbaLinhas, AbaCasamento, AbaAcopladas, AbaFiltrosLinhas,
+                                              AbaRessonadores]),
     ("Cap. 2 – Linhas periódicas", [AbaCelula, AbaCarga, AbaEBG, AbaFloquet, AbaAplicacoesEBG]),
     ("Cap. 3 – Metamateriais", [AbaCRLH, AbaCLLoaded, AbaCSRR, AbaExtracao]),
     ("Cap. 4 – Aplicações", [AbaMultibanda, AbaDispositivos, AbaFiltros]),
     ("Cap. 5 – Sintonizáveis e não lineares", [AbaSintonia, AbaNLTL]),
     ("Cap. 6 – Outras linhas avançadas", [AbaDiferencial, AbaMIW, AbaSIW, AbaNaoFoster]),
+    ("Projeto prático (Garg-Bahl)", [AbaConectores, AbaCaracterizacao, AbaRobustez, AbaDGS, AbaBalun]),
+    ("Sistemas RF (Steer)", [AbaAmplificador, AbaAtenuadores]),
 ]
 # ferramentas gerais, fora dos capítulos (acessadas pelo menu Arquivo/Exportar e pela barra do substrato)
 GERAIS = [AbaSubstrato, AbaExportar]
@@ -46,7 +60,7 @@ GERAIS = [AbaSubstrato, AbaExportar]
 # lista plana mantida para scripts e testes (ordem de criação)
 ABAS = [AbaSubstrato] + [c for _, cs in GRUPOS for c in cs] + [AbaExportar]
 
-VERSAO = "1.8"
+VERSAO = "2.1"
 
 
 class Aplicacao:
@@ -182,7 +196,11 @@ class Aplicacao:
     def _sobre(self):
         messagebox.showinfo("Sobre", f"LTA – Linhas de Transmissão Artificiais, versão {VERSAO}\n"
                                      "Base teórica: F. Martín, Artificial Transmission Lines for RF and "
-                                     "Microwave Applications, Wiley, 2015.\n\n"
+                                     "Microwave Applications, Wiley, 2015.\n"
+                                     "Linhas convencionais: D. M. Pozar, Microwave Engineering, 4ª ed., "
+                                     "Wiley, 2012.\n"
+                                     "Projeto prático: R. Garg, I. Bahl e M. Bianchi, Microstrip Lines and "
+                                     "Slotlines, 4ª ed., Artech House, 2024.\n\n"
                                      "Resultados de modelos de circuito: validar por simulação EM e medição.")
 
     def sair(self):

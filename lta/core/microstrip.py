@@ -31,19 +31,47 @@ class Substrato:
     nome: str = "Rogers RO3010"
     sigma: float = 5.8e7    # condutividade do metal [S/m] (cobre)
     rug_um: float = 0.0     # rugosidade RMS do cobre [um] (0 = superfície lisa)
+    # True: Z0 e εeff incluem a espessura t do metal (Bahl e Garg; Garg, Bahl e Bianchi,
+    # Microstrip Lines and Slotlines, 4ª ed., eqs. 2.124-2.127). Padrão False (t = 0), como no livro do Martín.
+    incluir_t: bool = False
 
 
-def analise(w_mm, sub: Substrato):
-    """Retorna (Z0 [ohm], eps_eff) para largura(s) w_mm."""
-    u = np.asarray(w_mm, dtype=float) / sub.h_mm
-    er = sub.er
+def _eeff_hj(u, er):
     a = (1 + np.log((u**4 + (u / 52) ** 2) / (u**4 + 0.432)) / 49
          + np.log(1 + (u / 18.1) ** 3) / 18.7)
     b = 0.564 * ((er - 0.9) / (er + 3)) ** 0.053
-    eeff = (er + 1) / 2 + (er - 1) / 2 * (1 + 10 / u) ** (-a * b)
+    return (er + 1) / 2 + (er - 1) / 2 * (1 + 10 / u) ** (-a * b)
+
+
+def _z_ar_hj(u):
     f = 6 + (2 * np.pi - 6) * np.exp(-((30.666 / u) ** 0.7528))
-    z01 = ETA0 / (2 * np.pi) * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))
-    return z01 / np.sqrt(eeff), eeff
+    return ETA0 / (2 * np.pi) * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))
+
+
+def largura_efetiva_t(w_mm, h_mm, t_mm):
+    """We/h com espessura t (eq. 2.125): W/h + 1,25 t/(πh)·(1 + ln(4πW/t) ou ln(2h/t))."""
+    u = np.asarray(w_mm, dtype=float) / h_mm
+    if t_mm <= 0:
+        return u
+    return u + 1.25 * t_mm / (np.pi * h_mm) * np.where(u <= 1 / (2 * np.pi),
+                                                       1 + np.log(4 * np.pi * np.asarray(w_mm) / t_mm),
+                                                       1 + np.log(2 * h_mm / t_mm))
+
+
+def analise(w_mm, sub: Substrato):
+    """Retorna (Z0 [ohm], eps_eff) para largura(s) w_mm (Hammerstad-Jensen).
+
+    Com sub.incluir_t, a impedância em ar usa a largura efetiva We (eq. 2.125) e
+    εeff perde C = (εr - 1)/4,6·(t/h)/√(W/h) (eqs. 2.126-2.127).
+    """
+    u = np.asarray(w_mm, dtype=float) / sub.h_mm
+    er = sub.er
+    eeff = _eeff_hj(u, er)
+    if sub.incluir_t and sub.t_um > 0:
+        t = sub.t_um * 1e-3
+        eeff = eeff - (er - 1) / 4.6 * (t / sub.h_mm) / np.sqrt(u)
+        u = largura_efetiva_t(w_mm, sub.h_mm, t)
+    return _z_ar_hj(u) / np.sqrt(eeff), eeff
 
 
 def sintese(z0, sub: Substrato):

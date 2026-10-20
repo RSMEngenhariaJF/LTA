@@ -5,6 +5,7 @@ import traceback
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, Polygon, Rectangle
@@ -304,3 +305,46 @@ def desenhar_layout(ax, layout):
     ax.set_xlabel("x [mm]")
     ax.set_ylabel("y [mm]")
     ax.set_title(f"Layout: {layout.nome}  ({layout.comprimento:.2f} x {layout.largura:.2f} mm)", fontsize=9)
+
+
+def desenhar_smith(ax):
+    """Carta de Smith simplificada, com os círculos r = 1 e g = 1 destacados."""
+    t = np.linspace(0, 2 * np.pi, 361)
+    ax.plot(np.cos(t), np.sin(t), color="k", lw=0.8)
+    for r in (0.2, 0.5, 2, 5):
+        c, raio = r / (1 + r), 1 / (1 + r)
+        ax.plot(c + raio * np.cos(t), raio * np.sin(t), color="#ccc", lw=0.5)
+    for x in (0.2, 0.5, 1, 2, 5):
+        for sx in (1, -1):
+            z = 1j * sx * x + np.logspace(-3, 3, 300)
+            g = (z - 1) / (z + 1)
+            ax.plot(g.real, g.imag, color="#ccc", lw=0.5)
+    ax.plot(0.5 + 0.5 * np.cos(t), 0.5 * np.sin(t), color="C2", lw=1, ls="--", label="r = 1")
+    ax.plot(-0.5 + 0.5 * np.cos(t), 0.5 * np.sin(t), color="C4", lw=1, ls="--", label="g = 1")
+    ax.axhline(0, color="#ccc", lw=0.5)
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_aspect("equal")
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def salvar_csv_s(aba, nome, f, s):
+    """Pergunta o arquivo e grava S de N portas em CSV (dB e graus; separador ';')."""
+    PASTA_SAIDAS.mkdir(exist_ok=True)
+    caminho = filedialog.asksaveasfilename(initialdir=PASTA_SAIDAS, initialfile=f"{nome}_S.csv",
+                                           defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+    if not caminho:
+        return
+    n = s.shape[1]
+    cab = ["f_GHz"] + [f"S{i + 1}{j + 1}_{q}" for i in range(n) for j in range(n) for q in ("dB", "graus")]
+    linhas = [";".join(cab)]
+    for fi, si in zip(f, s):
+        vals = [f"{fi / 1e9:.9g}"]
+        for i in range(n):
+            for j in range(n):
+                vals += [f"{20 * np.log10(max(abs(si[i, j]), 1e-15)):.6f}", f"{np.degrees(np.angle(si[i, j])):.4f}"]
+        linhas.append(";".join(vals))
+    Path(caminho).write_text("\n".join(linhas) + "\n", encoding="ascii")
+    aba.estado.msg(f"S salvo em {relativo(caminho)}")
+

@@ -115,3 +115,16 @@ def simplificar_perfil(x, w, tol=1e-4):
 def margem_lateral(sub: Substrato, w_max):
     """Meia-largura da placa: borda do cobre + max(5h, 2 mm) de dielétrico/terra."""
     return w_max / 2 + max(5 * sub.h_mm, 2.0)
+
+
+def largura_porta_onda(layout, porta):
+    """Largura [mm] da porta de onda: ~10·W ou 10·h, sem invadir portas vizinhas do mesmo lado
+    (acopladores e híbridas) nem passar da borda da placa."""
+    _, y0, _, y1 = layout.placa
+    h = layout.substrato.h_mm
+    wp = min(y1 - y0, max(10 * porta.largura, 10 * h))
+    vizinhas = [abs(p.y - porta.y) for p in layout.portas if p is not porta and p.lado == porta.lado]
+    if vizinhas:
+        wp = min(wp, 0.95 * min(vizinhas))
+    return max(min(wp, 2 * (porta.y - y0), 2 * (y1 - porta.y)), 2 * porta.largura)
+

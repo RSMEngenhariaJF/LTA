@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ..geometria.layout import largura_porta_onda
+
 
 def _fmt(v):
     return f"{v:.6f}".rstrip("0").rstrip(".") if v != 0 else "0"
@@ -138,7 +140,7 @@ def hfss(layout, caminho, f_min_ghz, f_max_ghz, f_sol_ghz=None, n_pontos=401):
     a("")
     a("# Portas de onda nas faces x da caixa")
     for k, porta in enumerate(layout.portas, start=1):
-        wp = min(y1 - y0, max(10 * porta.largura, 10 * h))
+        wp = largura_porta_onda(layout, porta)
         hp = min(h + h_ar, 10 * h)
         a('oEditor.CreateRectangle(["NAME:RectangleParameters", "IsCovered:=", True,')
         a(f'    "XStart:=", "{_fmt(porta.x)}mm", "YStart:=", "{_fmt(porta.y - wp / 2)}mm", "ZStart:=", "0mm",')
@@ -287,7 +289,7 @@ def cst(layout, caminho, f_min_ghz, f_max_ghz):
     a('    .Zmin "electric" : .Zmax "expanded open"')
     a("End With")
     for k, porta in enumerate(layout.portas, start=1):
-        wp = min(y1 - y0, max(10 * porta.largura, 10 * h)) / 2
+        wp = largura_porta_onda(layout, porta) / 2
         a("With Port")
         a(f'    .Reset : .PortNumber "{k}" : .Label "" : .NumberOfModes "1"')
         a('    .AdjustPolarization "False" : .PolarizationAngle "0.0" : .ReferencePlaneDistance "0"')

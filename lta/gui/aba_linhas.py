@@ -6,8 +6,9 @@ import numpy as np
 
 from ..core import abcd
 from ..core import linhas_planares as lp
+from ..core.descontinuidades import extensao_ponta_aberta, texto_limites, via
 from ..core.microstrip import C0, NP_DB
-from ..geometria import construtores
+from ..geometria import circuitos, construtores
 from .comum import AbaBase, AreaTexto, Formulario, protegido
 from .previa import PreviaEstrutura
 
@@ -42,6 +43,9 @@ class AbaLinhas(AbaBase):
         self.perdas = tk.BooleanVar(value=True)
         ttk.Checkbutton(self.painel, text="Incluir perdas (dielétrico; condutor só em microstrip)",
                         variable=self.perdas).pack(anchor="w", pady=(6, 0))
+        self.corrigir = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.painel, text="Descontar ponta aberta / via do stub (Kirschning-Jansen, Goldfarb-Pucel)",
+                        variable=self.corrigir, command=self.atualizar_previa).pack(anchor="w")
         self.botoes(("Calcular", self.calcular), ("Enviar p/ exportação", self.publicar),
                     ("Exportar S2P", self.exportar_s2p))
         self.saida = AreaTexto(self.painel, 20)
@@ -62,12 +66,13 @@ class AbaLinhas(AbaBase):
     # ------------------------------------------------------------------ projeto
     def _geometria(self, v, sub, z):
         tipo = v["tipo"]
+        f0 = v["f0"] * 1e9
         if v["modo"] == MODOS[0]:
-            w = lp.sintetizar(tipo, z, sub, g=v["g"], b=v["b"])
+            w = lp.sintetizar(tipo, z, sub, g=v["g"], b=v["b"], f=f0)
         else:
             w = v["w"]
         geo = lp.Geometria(tipo, w, v["g"], v["b"])
-        z0, ee = lp.analisar(geo, sub)
+        z0, ee = lp.analisar(geo, sub, f0)
         return geo, z0, ee
 
     def _gerar(self):
@@ -88,12 +93,23 @@ class AbaLinhas(AbaBase):
             extra = dict(geo_t=geo_t, zt=zt_r, ee_t=ee_t, geo_2=geo_2, z2=z2_r)
         else:
             comp = lp.comprimento_eletrico(geo, sub, f0, v["fase"])
+        # ponta aberta: o campo de franja alonga o stub de Δl; o layout desconta Δl se marcado.
+        # stub em curto: a via (Goldfarb-Pucel) também alonga o stub; desconta-se o equivalente em linha.
+        extra["dl"] = extensao_ponta_aberta(geo.w, sub) if v["elemento"] == ELEMENTOS[1] else 0.0
+        extra["dl_via"] = (lp.encurtamento_via(v["rvia"], geo, sub, f0)
+                           if v["elemento"] == ELEMENTOS[2] and v["rvia"] > 0 else 0.0)
+        extra["comp_fisico"] = comp - ((extra["dl"] + extra["dl_via"]) if self.corrigir.get() else 0.0)
+        if extra["comp_fisico"] <= 0:
+            raise ValueError("Stub mais curto que a correção de ponta aberta.")
         info = {"tipo": f"{v['tipo']} - {v['elemento']}", "Z0_ohm": f"{z0:.2f}", "eeff": f"{ee:.4f}",
                 "W_mm": f"{geo.w:.4f}", "comprimento_mm": f"{comp:.4f}", "f0_GHz": v["f0"]}
         lay = None
-        if v["tipo"] != lp.TIPOS[1]:
+        if v["tipo"] == lp.TIPOS[5]:
+            lay = circuitos.slotline("trecho_slotline", sub, geo.w, comp, max(v["lterra"], 5 * geo.w), 5.0,
+                                     info=info)
+        elif v["tipo"] != lp.TIPOS[1]:
             d = dict(w=geo.w, g=v["g"], comp=comp, largura_terra=v["lterra"], raio_via=v["rvia"],
-                     passo_vias=v["pvia"], w_stub=geo.w, comp_stub=comp)
+                     passo_vias=v["pvia"], w_stub=geo.w, comp_stub=extra["comp_fisico"])
             if v["elemento"] == ELEMENTOS[3]:
                 d.update(w1=geo.w, wt=extra["geo_t"].w, w2=extra["geo_2"].w)
             nome = {ELEMENTOS[0]: "trecho", ELEMENTOS[1]: "stub_aberto", ELEMENTOS[2]: "stub_curto",
@@ -125,7 +141,8 @@ class AbaLinhas(AbaBase):
         if el == ELEMENTOS[0]:
             m = lp.abcd_trecho(f, geo, sub, comp, perdas)
         elif el in ELEMENTOS[1:3]:
-            m = lp.abcd_stub(f, geo, sub, comp, curto=el == ELEMENTOS[2], perdas=perdas)
+            m = lp.abcd_stub(f, geo, sub, extra["comp_fisico"] + extra["dl"], curto=el == ELEMENTOS[2],
+                             perdas=perdas, raio_via=v["rvia"] if v["rvia"] > 0 else None)
         else:
             m = lp.abcd_trecho(f, extra["geo_t"], sub, comp, perdas)
             z1p, z2p = v["z0"], v["z2"]
@@ -151,9 +168,9 @@ class AbaLinhas(AbaBase):
         f0 = v["f0"] * 1e9
         g0, _ = lp.gama(np.array([f0]), geo, sub, True)
         lg = C0 / (f0 * np.sqrt(ee)) * 1e3
-        nomes = {lp.TIPOS[0]: "W", lp.TIPOS[1]: "W", lp.TIPOS[4]: "W (fitas)"}
+        nomes = {lp.TIPOS[0]: "W", lp.TIPOS[1]: "W", lp.TIPOS[4]: "W (fitas)", lp.TIPOS[5]: "fenda"}
         dims = f"{nomes.get(geo.tipo, 'S')} = {geo.w:.4f} mm"
-        if geo.tipo in lp.TIPOS[2:]:
+        if geo.tipo in lp.TIPOS[2:5]:
             dims += f", {'S' if geo.tipo == lp.TIPOS[4] else 'G'} = {geo.g:g} mm"
         if geo.tipo == lp.TIPOS[1]:
             dims += f", b = {geo.b:g} mm"
@@ -161,7 +178,12 @@ class AbaLinhas(AbaBase):
                   f"{dims}  →  Z0 = {z0:.2f} Ω, εeff = {ee:.4f}",
                   f"λg em {v['f0']:g} GHz = {lg:.3f} mm;  vp = {1 / np.sqrt(ee):.3f}·c",
                   f"α em f0 = {g0.real[0] * NP_DB / 100:.4f} dB/cm"
-                  + (" (dielétrico + condutor)" if geo.tipo == lp.TIPOS[0] else " (só dielétrico)")]
+                  + (" (dielétrico + condutor)" if geo.tipo in lp.TIPOS[:1] + lp.TIPOS[2:5]
+                     else " (só dielétrico)")]
+        if geo.tipo == lp.TIPOS[5]:
+            linhas.append("Slotline dispersiva: Z0 e εeff em f0 (Janaswamy-Schaubert / Garg-Gupta)")
+        if sub.incluir_t:
+            linhas.append(f"Z0 e εeff incluem a espessura t = {sub.t_um:g} µm (Garg-Bahl)")
         if el == ELEMENTOS[3]:
             linhas += ["", f"Transformador λ/4: Zt = √(Z0·Z2) = {extra['zt']:.2f} Ω, W = {extra['geo_t'].w:.4f} mm, "
                        f"εeff = {extra['ee_t']:.4f}", f"Comprimento λ/4 em f0: {comp:.3f} mm",
@@ -182,12 +204,23 @@ class AbaLinhas(AbaBase):
                 tipo_ress = "rejeição" if (el == ELEMENTOS[1]) == (abs(v["fase"] - 90) < 1) else "passagem"
                 linhas.append(f"Stub de {v['fase']:g}° em f0: {tipo_ress} em f0 (zero de transmissão "
                               "nos múltiplos ímpares de 90° para o aberto e pares para o curto)")
+            if el == ELEMENTOS[2] and extra["dl_via"]:
+                lv, rv = via(v["rvia"], sub, f0)
+                linhas.append(f"Via (Goldfarb-Pucel): L = {lv * 1e12:.1f} pH, R = {float(rv) * 1e3:.2f} mΩ em f0; "
+                              f"equivale a {extra['dl_via']:.3f} mm de linha"
+                              + (" (descontado)" if self.corrigir.get() else ""))
+            if el == ELEMENTOS[1]:
+                linhas.append(f"Ponta aberta: Δl = {extra['dl']:.3f} mm (Kirschning-Jansen); stub físico = "
+                              f"{extra['comp_fisico']:.3f} mm" + ("" if self.corrigir.get() else
+                                                                   " (sem desconto: ressonância abaixo de f0)"))
         if lay is None:
             linhas.append("\nStripline: layout em três camadas não gerado.")
         elif lay.sem_terra:
             linhas.append("\nSem plano de terra inferior: a exportação omite a camada TERRA.")
+        if geo.tipo == lp.TIPOS[0]:
+            linhas += ["", "Limites do substrato:"] + texto_limites(sub, geo.w, v["fmax"] * 1e9)
         linhas += ["", "Modelos quase-estáticos com metal de espessura nula;",
-                   "stubs sem efeito de ponta aberta, junção T e via."]
+                   "stubs sem efeito de junção T e via (ponta aberta incluída)."]
         self.saida.escrever("\n".join(linhas))
 
     @protegido

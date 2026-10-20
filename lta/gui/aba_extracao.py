@@ -8,7 +8,7 @@ import numpy as np
 from ..core import abcd
 from ..core import extracao as ex
 from ..exportacao.simuladores import ler_touchstone
-from .comum import PASTA_SAIDAS, AbaBase, AreaTexto, Formulario, protegido, relativo
+from .comum import PASTA_SAIDAS, AbaBase, AreaTexto, Formulario, desenhar_smith, protegido, relativo
 
 ARQUIVO = "Arquivo .s2p…"
 UNIDADES = {"L": ("nH", 1e9), "C": ("pF", 1e12)}
@@ -28,28 +28,6 @@ EXEMPLOS = {
 
 def _unid(chave):
     return UNIDADES[chave[0]]
-
-
-def desenhar_smith(ax):
-    """Carta de Smith simplificada, com os círculos r = 1 e g = 1 destacados."""
-    t = np.linspace(0, 2 * np.pi, 361)
-    ax.plot(np.cos(t), np.sin(t), color="k", lw=0.8)
-    for r in (0.2, 0.5, 2, 5):
-        c, raio = r / (1 + r), 1 / (1 + r)
-        ax.plot(c + raio * np.cos(t), raio * np.sin(t), color="#ccc", lw=0.5)
-    for x in (0.2, 0.5, 1, 2, 5):
-        for sx in (1, -1):
-            z = 1j * sx * x + np.logspace(-3, 3, 300)
-            g = (z - 1) / (z + 1)
-            ax.plot(g.real, g.imag, color="#ccc", lw=0.5)
-    ax.plot(0.5 + 0.5 * np.cos(t), 0.5 * np.sin(t), color="C2", lw=1, ls="--", label="r = 1")
-    ax.plot(-0.5 + 0.5 * np.cos(t), 0.5 * np.sin(t), color="C4", lw=1, ls="--", label="g = 1")
-    ax.axhline(0, color="#ccc", lw=0.5)
-    ax.set_xlim(-1.05, 1.05)
-    ax.set_ylim(-1.05, 1.05)
-    ax.set_aspect("equal")
-    ax.set_xticks([])
-    ax.set_yticks([])
 
 
 class AbaExtracao(AbaBase):

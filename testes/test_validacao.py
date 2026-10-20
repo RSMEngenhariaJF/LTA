@@ -951,5 +951,722 @@ class Exportacao(unittest.TestCase):
         self.assertEqual(tipos[-1], 0x0400)
 
 
+# ---------------------------------------------------------------------------
+# D. M. Pozar, Microwave Engineering, 4ª ed. (2012): exemplos resolvidos
+# ---------------------------------------------------------------------------
+class PozarMicrostrip(unittest.TestCase):
+    def test_ex_3_7_formulas_fechadas(self):
+        from lta.core import descontinuidades as dc
+        sub = Substrato(9.9, 0.5)
+        w = dc.pozar_sintese(50, sub)
+        self.assertAlmostEqual(w, 0.483, delta=0.002)                     # W = 0,483 mm
+        self.assertAlmostEqual(float(dc.pozar_analise(w, sub)[1]), 6.665, delta=0.005)
+        self.assertAlmostEqual(float(analise(w, sub)[0]), 50, delta=1.0)   # Hammerstad-Jensen concorda
+
+    def test_ex_3_4_ondas_de_superficie(self):
+        from lta.core import descontinuidades as dc
+        lim = dc.limites_substrato(Substrato(2.55, 1.0))
+        self.assertAlmostEqual(lim["TE1 (onda de superfície)"] * 1e-3 / ms.C0, 1 / (4 * np.sqrt(1.55)), places=9)
+        self.assertAlmostEqual(lim["TM1 (onda de superfície)"] / lim["TE1 (onda de superfície)"], 2, places=9)
+
+    def test_ponta_aberta(self):
+        # Kirschning-Jansen-Koster contra a fórmula mais simples de Hammerstad (diferem até ~10%)
+        from lta.core import descontinuidades as dc
+        for er, u in ((2.2, 3.0), (10.2, 1.0), (4.4, 0.5)):
+            sub = Substrato(er, 1.0)
+            ee = float(analise(u, sub)[1])
+            ham = 0.412 * (ee + 0.3) * (u + 0.264) / ((ee - 0.258) * (u + 0.8))
+            self.assertAlmostEqual(dc.extensao_ponta_aberta(u, sub) / ham, 1, delta=0.1, msg=(er, u))
+
+    def test_gap(self):
+        from lta.core import descontinuidades as dc
+        sub = Substrato(9.6, 0.635)
+        cg = [dc.gap(0.635, s, sub)[0] for s in (0.07, 0.15, 0.3, 0.6)]
+        self.assertTrue(all(a > b > 0 for a, b in zip(cg, cg[1:])))       # cai com o gap
+        s = dc.gap_para_capacitancia(0.635, cg[1], sub)
+        self.assertAlmostEqual(s, 0.15, delta=1e-4)
+
+
+class PozarCasamento(unittest.TestCase):
+    def test_ex_5_1_rede_l(self):
+        from lta.core import casamento as cs
+        sol = cs.rede_l(200 - 100j, 100, 500e6)
+        self.assertAlmostEqual(sol[0].b * 100, 0.29, delta=0.005)
+        self.assertAlmostEqual(sol[0].x / 100, 1.22, delta=0.01)
+        self.assertEqual(sol[0].derivacao[0], "C")
+        self.assertAlmostEqual(sol[0].derivacao[1] * 1e12, 0.92, delta=0.01)
+        self.assertAlmostEqual(sol[1].derivacao[1] * 1e9, 46.1, delta=0.2)    # 2ª solução: L = 46,1 nH
+        for s in sol:
+            g = cs.gama(cs.zin_abcd(s.abcd(np.array([500e6])), 200 - 100j), 100)
+            self.assertLess(abs(g[0]), 1e-9)
+
+    def test_ex_5_2_e_5_3_stub_simples(self):
+        from lta.core import casamento as cs
+        s = cs.stub_simples(60 - 80j, 50, serie=False, curto=True)
+        np.testing.assert_allclose([(x.d, x.l) for x in s], [(0.110, 0.095), (0.260, 0.405)], atol=0.002)
+        s = cs.stub_simples(100 + 80j, 50, serie=True, curto=False)
+        np.testing.assert_allclose([(x.d, x.l) for x in s], [(0.120, 0.397), (0.463, 0.103)], atol=0.002)
+        zl = cs.carga_serie(60 - 80j, 2e9)
+        for x in cs.stub_simples(60 - 80j, 50, curto=True):
+            m = cs.abcd_stub_simples(np.array([2e9]), 2e9, 50, x, True, False)
+            self.assertLess(abs(cs.gama(cs.zin_abcd(m, zl(np.array([2e9]))), 50)[0]), 1e-9)
+
+    def test_ex_5_4_stub_duplo(self):
+        from lta.core import casamento as cs
+        s = cs.stub_duplo(60 - 80j, 50, 0.125, curto=False)
+        np.testing.assert_allclose([(x.b1, x.b2, x.l1, x.l2) for x in s],
+                                   [(1.314, 3.38, 0.146, 0.204), (-0.114, -1.38, 0.482, 0.350)], atol=0.003)
+        with self.assertRaises(ValueError):                              # região proibida (g > 2 para d = λ/8)
+            cs.stub_duplo(20 + 0j, 50, 0.125)
+
+    def test_ex_5_6_e_5_7_multissecao(self):
+        from lta.core import casamento as cs
+        np.testing.assert_allclose(cs.binomial(100, 50, 3), [91.7, 70.7, 54.5], atol=0.06)
+        self.assertAlmostEqual(cs.banda_binomial(100, 50, 3, 0.05), 0.70, delta=0.005)
+        z, tm = cs.chebyshev(50, 100, 3, 0.05)
+        np.testing.assert_allclose(z, [57.5, 70.7, 87.0], atol=0.06)
+        self.assertAlmostEqual(np.degrees(tm), 44.7, delta=0.05)
+        # Tabela 5.2 (exata), ZL/Z0 = 2, Γm = 0,05
+        np.testing.assert_allclose(np.array(cs.chebyshev(1, 2, 2, 0.05)[0]), [1.2193, 1.6402], rtol=0.003)
+        np.testing.assert_allclose(np.array(cs.chebyshev(1, 2, 4, 0.05)[0]), [1.1201, 1.2979, 1.5409, 1.7855],
+                                   rtol=0.003)
+        f = np.linspace(0.65, 1.35, 141) * 1e9                         # banda de 70% (θm = 44,7°)
+        g = cs.gama(cs.zin_abcd(cs.abcd_multissecao(f, 1e9, z), 100.0), 50)
+        self.assertLess(np.abs(g).max(), 0.055)
+
+    def test_ex_5_8_klopfenstein(self):
+        from lta.core import casamento as cs
+        self.assertAlmostEqual(cs.parametro_a(100, 50, 0.02), 3.543, delta=0.002)
+        s, z = cs.perfil_taper("Klopfenstein", 100, 50, 401, 0.02)
+        self.assertAlmostEqual(np.log(z[0] / 100), -0.02, delta=1e-4)  # degrau Γ0/cosh A = -Γm na ponta
+        np.testing.assert_allclose(cs.phi_klopfenstein([1.0], 2.0), (np.cosh(2) - 1) / 4, rtol=1e-6)
+        # resposta exata (cascata) na banda βL ≥ A: |Γ| ≈ Γm
+        bl = np.linspace(1.1 * 3.543, 12, 60)
+        zm = 0.5 * (z[1:] + z[:-1])
+        g = []
+        for b in bl:
+            m = abcd.cascata(*[abcd.linha(zz, np.array([b / 400])) for zz in zm])
+            g.append(abs(cs.gama(cs.zin_abcd(m, 50.0), 100)[0]))
+        self.assertLess(max(g), 0.024)
+        self.assertLess(cs.gama_taper_analitico("Klopfenstein", bl, 100, 50, 0.02).max(), 0.0201)
+
+    def test_bode_fano(self):
+        from lta.core import casamento as cs
+        b = cs.bode_fano(60 - 80j, 2e9, 1e9, 3e9)
+        r, c = 60, 1 / (2 * np.pi * 2e9 * 80)
+        w1, w2 = 2 * np.pi * 1e9, 2 * np.pi * 3e9
+        self.assertAlmostEqual(np.log(1 / b.gama_min) * (1 / w1 - 1 / w2), np.pi * r * c, places=12)
+
+
+class PozarAcopladas(unittest.TestCase):
+    def test_ex_7_7_stripline(self):
+        from lta.core import linhas_acopladas as la
+        ze, zo = la.impedancias_acoplador(50, 0.1)
+        self.assertAlmostEqual(ze, 55.28, delta=0.01)
+        self.assertAlmostEqual(zo, 45.23, delta=0.01)
+        w, s = la.sintetizar("Stripline", ze, zo, Substrato(2.2, 1.6), b=3.2)
+        self.assertAlmostEqual(w, 2.59, delta=0.02)                     # W = 0,259 cm
+        self.assertAlmostEqual(s, 0.98, delta=0.01)                     # S = 0,098 cm
+
+    def test_ex_7_8_binomial(self):
+        from lta.core import linhas_acopladas as la
+        c = la.coeficientes_binomial(0.1, 3)
+        np.testing.assert_allclose(c, [0.0125, 0.125, 0.0125], atol=1e-12)
+        np.testing.assert_allclose(la.impedancias_acoplador(50, c[0]), (50.63, 49.38), atol=0.01)
+        np.testing.assert_allclose(la.impedancias_acoplador(50, c[1]), (56.69, 44.10), atol=0.01)
+        # TEM ideal: 20 dB em f0, isolamento perfeito e casamento em toda a banda
+        secoes = [la.Secao(la.Modos(*la.impedancias_acoplador(50, x), 1.0, 1.0), ms.C0 / 4 / 3e9 * 1e3) for x in c]
+        f = np.linspace(1e9, 5e9, 41)
+        s = la.acoplador(f, secoes)
+        self.assertAlmostEqual(-abcd.db(s[20, 2, 0]), 20.0, delta=0.05)          # teoria de acoplamento fraco
+        self.assertLess(np.abs(s[:, 3, 0]).max(), 1e-9)
+        self.assertLess(np.abs(s[:, 0, 0]).max(), 1e-9)
+
+    def test_lange(self):
+        from lta.core import linhas_acopladas as la
+        c = 10 ** (-3 / 20)
+        ze, zo = la.impedancias_lange(50, c)
+        e4, o4 = la.modos_lange(ze, zo)
+        self.assertAlmostEqual(np.sqrt(e4 * o4), 50, places=6)          # eq. 7.98
+        self.assertAlmostEqual((e4 - o4) / (e4 + o4), c, places=6)      # eq. 7.99
+
+    def test_microstrip_garg_bahl(self):
+        from lta.core import linhas_acopladas as la
+        sub = Substrato(10, 1.0)
+        m = la.microstrip_acoplada(1.0, 0.5, sub)
+        self.assertGreater(m.ze, m.zo)
+        self.assertGreater(m.eee, m.eeo)                                # modo par mais lento (Pozar, p. 375)
+        self.assertAlmostEqual(m.ze, 60, delta=3)                       # Fig. 7.30 (εr = 10, W/h = 1, S/h = 0,5)
+        self.assertAlmostEqual(m.zo, 38, delta=3)
+        w, s = la.sintetizar("Microstrip", 70, 36, sub, modelo="Garg-Bahl")
+        r = la.microstrip_acoplada(w, s, sub)
+        self.assertAlmostEqual(r.ze, 70, delta=0.01)
+        self.assertAlmostEqual(r.zo, 36, delta=0.01)
+        w, s = la.sintetizar("Microstrip", 70, 36, sub)                 # padrão: Kirschning-Jansen
+        r = la.microstrip_acoplada_kj(w, s, sub)
+        self.assertAlmostEqual(r.ze, 70, delta=0.01)
+        self.assertAlmostEqual(r.zo, 36, delta=0.01)
+
+    def test_lta_diretividade(self):
+        # compensar o modo ímpar com capacitores periódicos recupera a diretividade da microstrip
+        from lta.core import linhas_acopladas as la
+        sub = Substrato(3.55, 0.813, 35, 0.0027)
+        f = np.array([2e9])
+        d = []
+        for lta in (False, True):
+            p = la.projeto_acoplador("Microstrip", 50, 10, 2e9, sub, 1, lta=lta, n_cel=8)
+            c, di, _, _ = la.metricas(la.acoplador(f, p.secoes, 50, sub))
+            self.assertAlmostEqual(c[0], 10, delta=0.15)
+            d.append(di[0])
+        self.assertLess(d[0], 20)
+        self.assertGreater(d[1], 40)
+
+
+class PozarFiltros(unittest.TestCase):
+    def setUp(self):
+        from lta.core import filtros
+        self.g05 = filtros.prototipo("Chebyshev", 3, 0.5)
+
+    def test_ex_8_5_kuroda(self):
+        from lta.core import filtros, filtros_convencionais as fc
+        g = filtros.prototipo("Chebyshev", 3, 3.0)
+        np.testing.assert_allclose(g[1:4], [3.3487, 0.7117, 3.3487], atol=4e-4)   # Tabela 8.4 (4 casas)
+        els = fc.richards_kuroda(g)
+        np.testing.assert_allclose([e.z for e in els], [1.299, 4.350, 1.405, 4.350, 1.299], atol=0.002)
+        f = np.linspace(0.3e9, 7e9, 25)
+        ref = abcd.cascata(fc.abcd_ue(f, 4e9, 50, np.pi / 4), fc.abcd_richards(f, 4e9, g, 50),
+                           fc.abcd_ue(f, 4e9, 50, np.pi / 4))
+        np.testing.assert_allclose(abcd.abcd_para_s(fc.abcd_elementos(f, 4e9, els, 50), 50),
+                                   abcd.abcd_para_s(ref, 50), atol=1e-9)      # identidade exata
+        s = abcd.abcd_para_s(fc.abcd_elementos(np.array([4e9]), 4e9, els, 50), 50)
+        self.assertAlmostEqual(abcd.db(s[0, 1, 0]), -3.0, delta=0.01)        # ripple de 3 dB em fc
+        with self.assertRaises(ValueError):
+            fc.richards_kuroda(filtros.prototipo("Butterworth", 5))
+
+    def test_ex_8_6_degraus(self):
+        from lta.core import filtros, filtros_convencionais as fc, linhas_planares as lp
+        g = filtros.prototipo("Butterworth", 6)
+        tr = fc.degraus(g, 50, 20, 120, comeca_com_c=True)
+        np.testing.assert_allclose([np.degrees(t.bl) for t in tr], [11.8, 33.8, 44.3, 46.1, 32.4, 12.3], atol=0.15)
+        sub = Substrato(4.2, 1.58)
+        self.assertAlmostEqual(lp.sintetizar("Microstrip", 20, sub), 11.3, delta=0.25)
+        self.assertAlmostEqual(lp.sintetizar("Microstrip", 120, sub), 0.428, delta=0.02)
+        f = np.array([4e9])
+        s = abcd.abcd_para_s(fc.abcd_degraus_ideal(f, 2.5e9, tr), 50)
+        self.assertLess(abcd.db(s[0, 1, 0]), -20)                         # > 20 dB em 4 GHz
+
+    def test_ex_8_7_linhas_acopladas(self):
+        from lta.core import filtros_convencionais as fc
+        p = fc.projeto_linhas_acopladas(self.g05, 2e9, 0.1, 50)
+        np.testing.assert_allclose(p.jz, [0.3137, 0.1187, 0.1187, 0.3137], atol=1e-4)
+        np.testing.assert_allclose(p.ze, [70.61, 56.64, 56.64, 70.61], atol=0.01)
+        np.testing.assert_allclose(p.zo, [39.24, 44.77, 44.77, 39.24], atol=0.01)
+        f = np.array([1.8e9, 2.0e9])
+        s = fc.s_linhas_acopladas(f, fc.secoes_ideais(2e9, p.ze, p.zo))
+        self.assertAlmostEqual(abcd.db(s[0, 1, 0]), -20, delta=1.5)        # ~20 dB em 1,8 GHz
+        self.assertGreater(abcd.db(s[1, 1, 0]), -0.6)
+
+    def test_lta_suprime_espuria(self):
+        from lta.core import filtros_convencionais as fc
+        sub = Substrato(3.55, 0.813, 35, 0.0)
+        f = np.linspace(3.6e9, 4.4e9, 161)
+        pico = []
+        for lta in (False, True):
+            p = fc.projeto_linhas_acopladas(self.g05, 2e9, 0.1, 50, sub, lta=lta, n_cel=6)
+            s = fc.s_linhas_acopladas(f, p.secoes, 50, sub)
+            pico.append(abcd.db(s[:, 1, 0]).max())
+            s0 = fc.s_linhas_acopladas(np.array([2e9]), p.secoes, 50, sub)
+            self.assertGreater(abcd.db(s0[0, 1, 0]), -1.0)
+        self.assertGreater(pico[0], -3)                                  # espúria em 2f0 na microstrip
+        self.assertLess(pico[1], -25)                                    # suprimida com LTA
+
+    def test_ex_8_8_a_8_10(self):
+        from lta.core import filtros_convencionais as fc
+        np.testing.assert_allclose(fc.stubs_quarto(self.g05, 0.15, 50), [265.9, 387.0, 265.9], atol=0.1)
+        p = fc.ressonadores_serie_gap(self.g05, 2e9, 0.1, 50)
+        np.testing.assert_allclose(p.c * 1e12, [0.554, 0.192, 0.192, 0.554], atol=0.001)
+        np.testing.assert_allclose(np.degrees(p.theta), [155.8, 166.5, 155.8], atol=0.1)
+        q = fc.ressonadores_derivacao(self.g05, 2.5e9, 0.1, 50)
+        np.testing.assert_allclose(q.c * 1e12, [0.2896, 0.0756, 0.0756, 0.2896], atol=2e-4)
+        np.testing.assert_allclose(q.l * 360, [73.6, 83.2, 73.6], atol=0.1)
+
+
+class PozarRessonadores(unittest.TestCase):
+    def test_ex_6_2(self):
+        from lta.core import descontinuidades as dc, ressonadores as rs
+        sub = Substrato(2.08, 1.59, 35, 0.0004, "Teflon")
+        r = rs.projeto(rs.TIPOS[0], 5e9, 50, sub, corrigir_ponta=False)
+        self.assertAlmostEqual(r.w, 5.08, delta=0.03)
+        self.assertAlmostEqual(r.eeff, 1.80, delta=0.01)
+        self.assertAlmostEqual(r.comp, 22.4, delta=0.1)
+        self.assertAlmostEqual(r.alfa_d, 0.024, delta=0.001)
+        ac = float(dc.pozar_alfa_condutor(r.w, sub, 5e9))
+        self.assertAlmostEqual(ac, 0.0724, delta=0.001)
+        # O livro usa β = 151,0 rad/m, mas 2π·5 GHz·√1,80/c = 140,5 rad/m: com αc e αd do livro,
+        # Q0 = 140,5/(2·0,0964) ≈ 729 (o 783 do texto herda o β inconsistente).
+        self.assertAlmostEqual(r.beta, 140.5, delta=0.3)
+        self.assertAlmostEqual(r.beta / (2 * (ac + r.alfa_d)), 729, delta=5)
+
+    def test_ex_6_6_gap(self):
+        from lta.core import ressonadores as rs
+        alfa = 0.01 / ms.NP_DB * 100                                     # 0,01 dB/cm
+        r = rs.Ressonador(rs.TIPOS[0], 5e9, 50, 4.0, 1.9, 21.75, alfa, 0.0)
+        self.assertAlmostEqual(r.q0, 628, delta=2)
+        a = rs.acoplamento_gap(r, Substrato(2.2, 1.6))
+        self.assertAlmostEqual(a.bc, 0.05, delta=0.0005)
+        self.assertAlmostEqual(a.c * 1e12, 0.032, delta=0.0005)
+        self.assertAlmostEqual(a.f_carregada / 1e9, 4.918, delta=0.005)
+        f = np.linspace(4.85e9, 5.0e9, 15001)
+        z = rs.zin_acoplado(f, r, a)
+        g = np.abs((z - 50) / (z + 50))
+        self.assertLess(g.min(), 0.03)                                   # acoplamento crítico
+
+
+class PozarDivisores(unittest.TestCase):
+    def test_ex_7_1_juncao_t(self):
+        from lta.core import dispositivos as dv
+        z2, z3 = dv.impedancias_juncao_t(50, 0.5)                       # P3/P2 = 1/2 → 75 e 150 Ω
+        self.assertAlmostEqual(z2, 75)
+        self.assertAlmostEqual(z3, 150)
+        s = dv.juncao_t(np.array([1e9]), 50, 150, 75)[0]
+        self.assertAlmostEqual(abs(s[0, 0]), 0, places=5)
+        self.assertAlmostEqual(s[1, 1].real, -0.666, delta=0.001)
+        self.assertAlmostEqual(s[2, 2].real, -0.333, delta=0.001)
+
+    def test_wilkinson_desigual_eq_7_37(self):
+        from lta.core import dispositivos as dv
+        f = np.array([1e9])
+        z2, z3, r, r2, r3 = dv.impedancias_wilkinson(50, 2.0)
+        lin = lambda z: dv.linha_convencional(z, np.pi / 2, 1e9)   # noqa: E731
+        for tr in ((None, None), (lin(np.sqrt(50 * r2)), lin(np.sqrt(50 * r3)))):
+            s = dv.wilkinson_desigual(f, lin(z2), lin(z3), 2.0, 50, *tr)[0]
+            np.testing.assert_allclose(np.abs(s) ** 2, [[0, 1 / 3, 2 / 3], [1 / 3, 0, 0], [2 / 3, 0, 0]], atol=1e-9)
+
+    def test_rede_exata_em_f0(self):
+        # nós internos só com linhas λ/4 ideais exatamente em f0 (antes singular na redução de Kron)
+        from lta.core import dispositivos as dv
+        f = np.array([1e9])
+        lin = dv.linha_convencional(50, np.pi / 2, 1e9)
+        r = dv.Rede(5, [0, 3, 4], f)
+        r.bipolo(0, 1, dv.linha_convencional(50 * np.sqrt(2), np.pi / 2, 1e9)(f))
+        r.bipolo(0, 2, dv.linha_convencional(50 * np.sqrt(2), np.pi / 2, 1e9)(f))
+        r.impedancia(1, 2, 100)
+        r.bipolo(1, 3, lin(f))
+        r.bipolo(2, 4, lin(f))
+        np.testing.assert_allclose(np.abs(r.s(50)[0]) ** 2, [[0, .5, .5], [.5, 0, 0], [.5, 0, 0]], atol=1e-9)
+
+    def test_slow_wave(self):
+        from lta.core import dispositivos as dv
+        sub = Substrato(3.55, 0.813, 35, 0.0)
+        f = np.array([2e9])
+        ramos = []
+        for z in (50 / np.sqrt(2), 50):
+            for tipo in dv.CARGAS_SW:
+                try:
+                    p = dv.projeto_slow_wave(z, np.pi / 2, 2e9, 3, 100, sub, 60 if tipo == dv.CARGAS_SW[0] else 10,
+                                             tipo)
+                except ValueError:
+                    continue
+                m = dv.linha_slow_wave(p, sub)(f)
+                self.assertAlmostEqual(float(abcd.dispersao(m)[1][0]), np.pi / 2, places=6)
+                self.assertAlmostEqual(abcd.impedancia_bloch(m)[0][0].real, z, places=4)
+                self.assertLess(p.reducao, 0.6)                           # miniaturização
+                if tipo == dv.CARGAS_SW[0]:
+                    ramos.append(dv.linha_slow_wave(p, sub))
+        s = dv.branch_line(f, *ramos)[0]
+        np.testing.assert_allclose(np.abs(s[:, 0]) ** 2, [0, 0.5, 0.5, 0], atol=1e-9)
+
+
+class LayoutsPozar(unittest.TestCase):
+    def test_exportacao_circuitos(self):
+        from lta.core import dispositivos as dv
+        from lta.geometria import circuitos as ci
+        from lta.geometria.layout import largura_porta_onda
+        sub = Substrato(3.55, 0.813)
+        p = dv.projeto_slow_wave(50 / np.sqrt(2), np.pi / 2, 2e9, 3, 100, sub, 60)
+        q = dv.projeto_slow_wave(50, np.pi / 2, 2e9, 3, 100, sub, 60)
+        lays = [ci.linha_com_stubs("cs", sub, [(10, 1.8)], [dict(x=0, w=1.8, comp=8, curto=True)], 1.8, 1.8, 5, 0),
+                ci.linha_perfil("lp", sub, [0, 5, 5, 10], [1.8, 1.8, 1.0, 1.0], 1.8, 1.0),
+                ci.acoplador_linhas("ac", sub, [(20, 1.5, 0.15)], 1.8, capacitores=[4]),
+                ci.filtro_linhas_acopladas("fa", sub, [(22, 1.2, 0.2), (22, 1.6, 0.6), (22, 1.2, 0.2)], 1.8),
+                ci.filtro_gaps("fg", sub, 1.8, [0.1, 0.2, 0.1], [40, 40]),
+                ci.ressonador_gap("rg", sub, 1.8, 1.8, 40, 0.1, curto=True),
+                ci.branch_line("bl", sub, 1.8, 3.0, 21, 1.8, 22),
+                ci.branch_line("bs", sub, 1.8, 0, 0, 0, 0, sw_s=(p.geo, p.n), sw_p=(q.geo, q.n)),
+                ci.rat_race("rr", sub, 1.8, 1.0, 21),
+                ci.wilkinson("wk", sub, 1.8, 1.0, 22, 1.4, 22, 1.2, 2.5, t2=(1.4, 22), t3=(2.6, 21)),
+                ci.juncao_t("jt", sub, 1.8, 0.8, 0.3, t2=(1.2, 22), t3=(0.7, 23))]
+        with tempfile.TemporaryDirectory() as d:
+            for lay in lays:
+                arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=5))
+                self.assertTrue(all(a.stat().st_size > 0 for a in arqs), lay.nome)
+                compile((Path(d) / f"{lay.nome}_hfss.py").read_text(encoding="utf-8"), "hfss", "exec")
+                txt = (Path(d) / f"{lay.nome}.kicad_pcb").read_text()
+                self.assertEqual(txt.count("("), txt.count(")"))
+                x0, y0, x1, y1 = lay.placa
+                for pt in lay.portas:
+                    self.assertIn(pt.x, (x0, x1), lay.nome)                # portas nas faces x
+                    self.assertTrue(y0 < pt.y < y1, lay.nome)
+                    wp = largura_porta_onda(lay, pt)
+                    for o in lay.portas:                                 # portas de onda sem sobreposição
+                        if o is not pt and o.lado == pt.lado:
+                            self.assertLess(wp / 2 + largura_porta_onda(lay, o) / 2, abs(o.y - pt.y) + 1e-9,
+                                            lay.nome)
+
+
+# ---------------------------------------------------------------------------
+# R. Garg, I. Bahl e M. Bianchi, Microstrip Lines and Slotlines, 4ª ed. (2024)
+# ---------------------------------------------------------------------------
+class GargBahlMicrostrip(unittest.TestCase):
+    def test_espessura(self):
+        # eqs. 2.124-2.127: t > 0 baixa Z0 e εeff (Tabela 2.5: Δεeff ≈ -0,03 a -0,08 em alumina)
+        al = Substrato(9.7, 0.635, 10)
+        w = sintese(50, al)
+        z0, e0 = analise(w, al)
+        zt, et = analise(w, Substrato(9.7, 0.635, 10, incluir_t=True))
+        self.assertLess(zt, z0)
+        self.assertTrue(-0.08 < et - e0 < -0.02)
+        self.assertAlmostEqual(float(analise(w, Substrato(9.7, 0.635, 0.0, incluir_t=True))[0]), float(z0), places=9)
+
+    def test_fT_qr_e_via(self):
+        from lta.core import descontinuidades as dc
+        self.assertAlmostEqual(dc.frequencia_ft(Substrato(3.8, 0.5)) / 1e9, 106.0, delta=0.5)   # < 0,5 mm a 100 GHz
+        self.assertAlmostEqual(float(dc.q_radiacao(50, Substrato(3.8, 1.0), 1e9)), 4252, delta=10)  # 0,4252e4/(fh)²
+        lv, _ = dc.via(0.1, Substrato(9.6, 0.38), 1e9)
+        self.assertAlmostEqual(lv * 1e12, 67, delta=1)                                      # h = 380, r = 100 µm
+
+    def test_curva_e_chanfro(self):
+        from lta.core import descontinuidades as dc
+        al = Substrato(9.7, 0.635)
+        w = sintese(50, al)
+        self.assertAlmostEqual(dc.chanfro_otimo(w, al), 72, delta=4)        # ~72% em alumina (Easter)
+        cb, _ = dc.curva(w, al)
+        self.assertGreater(cb, 0)
+        self.assertGreater(dc.encurtamento_chanfro(w, al, 1e9), 0)
+
+    def test_degrau_corrige_filtro(self):
+        from lta.core import filtros, filtros_convencionais as fc
+        sub = Substrato(4.2, 1.58, 0, 0)
+        g = filtros.prototipo("Butterworth", 6)
+        tr = fc.degraus(g, 50, 20, 120)
+        segs = [(t.bl / (2 * np.pi) * 299.792458 / 2.5 / np.sqrt(float(analise(w, sub)[1])), w)
+                for t, w in zip(tr, [sintese(t.z, sub) for t in tr])]
+        cor, dls = fc.correcao_degraus(segs, sub)
+        self.assertEqual(len(dls), 5)
+        # o modelo com degraus aplicado aos trechos corrigidos volta aos comprimentos elétricos de projeto
+        f = np.array([1.0e9, 2.5e9])
+        a = abcd.abcd_para_s(fc.abcd_degraus_microstrip(f, segs, sub, com_degraus=False), 50)
+        b = abcd.abcd_para_s(fc.abcd_degraus_microstrip(f, cor, sub, com_degraus=True), 50)
+        np.testing.assert_allclose(a, b, atol=1e-9)
+
+    def test_coplanares_e_slotline(self):
+        from lta.core import linhas_planares as lp
+        a, b = Substrato(3.55, 0.813, 35), Substrato(3.55, 0.813, 35, incluir_t=True)
+        for tp in ("CPW", "CPW com terra (GCPW)", "Coplanar strips (CPS)"):
+            geo = lp.Geometria(tp, 0.6, 0.2)
+            z0, e0 = lp.analisar(geo, a)
+            zt, et = lp.analisar(geo, b)
+            self.assertLess(zt, z0, tp)                                   # espessura baixa Z0 e εeff (seção 7.3.3)
+            self.assertLess(et, e0, tp)
+        # perda no condutor da CPW (eq. 7.126) na ordem das medidas da Fig. 7.23 (0,4-0,8 dB/cm)
+        st = Substrato(12.9, 0.5, 1.61, 0, "", 3.602e7)
+        ac = lp.alfa_condutor_coplanar(lp.Geometria("CPW", 0.0712, 0.049), st, np.array([10e9])) * ms.NP_DB / 100
+        self.assertTrue(0.4 < ac[0] < 0.9)
+        z, e = lp.slotline(0.3, 0.787, 2.22, 3e9)
+        self.assertTrue(80 < z < 110 and 1.1 < e < 1.6)
+        w = lp.sintetizar("Slotline", 90, Substrato(2.22, 0.787), f=3e9)
+        self.assertAlmostEqual(lp.analisar(lp.Geometria("Slotline", w), Substrato(2.22, 0.787), 3e9)[0], 90, places=3)
+
+    def test_stub_com_via(self):
+        from lta.core import linhas_planares as lp
+        sub = Substrato(3.55, 0.813, 35, 0.0)
+        geo = lp.Geometria("Microstrip", sintese(50, sub))
+        f0 = 2e9
+        comp = lp.comprimento_eletrico(geo, sub, f0, 90)
+        d = lp.encurtamento_via(0.2, geo, sub, f0)
+        y = lp.abcd_stub(np.array([f0]), geo, sub, comp - d, curto=True, perdas=False, raio_via=0.2)[0, 1, 0]
+        self.assertLess(abs(y) * 50, 0.02)                                # λ/4 em curto compensado: aberto em f0
+
+
+class GargBahlAcopladas(unittest.TestCase):
+    def test_kirschning_jansen_fig_4_12(self):
+        from lta.core import linhas_acopladas as la
+        sub = Substrato(9.7, 0.64)
+        m1 = la.microstrip_acoplada_kj(0.64, 0.064, sub, dispersivo=True)      # S/h = 0,1
+        m2 = la.microstrip_acoplada_kj(0.64, 0.64, sub, dispersivo=True)       # S/h = 1
+        self.assertAlmostEqual(m1.eee, 7.0, delta=0.1)
+        self.assertAlmostEqual(m1.eeo, 5.55, delta=0.1)
+        self.assertAlmostEqual(m2.eeo, 5.8, delta=0.1)
+        ee30, eo30 = m1.disp(np.array([30e9]))
+        self.assertAlmostEqual(float(ee30[0]), 8.35, delta=0.15)
+        self.assertAlmostEqual(float(eo30[0]), 6.05, delta=0.15)
+        self.assertAlmostEqual(float(m2.disp(np.array([30e9]))[1][0]), 6.85, delta=0.15)
+        gb = la.microstrip_acoplada(0.64, 0.32, sub)                           # Garg-Bahl a ~3%
+        kj = la.microstrip_acoplada_kj(0.64, 0.32, sub)
+        self.assertAlmostEqual(gb.ze / kj.ze, 1, delta=0.03)
+        self.assertAlmostEqual(gb.zo / kj.zo, 1, delta=0.04)
+
+    def test_espessura_perdas_ponta(self):
+        from lta.core import linhas_acopladas as la
+        sub = Substrato(9.7, 0.64, 10)
+        m0 = la.microstrip_acoplada_kj(0.64, 0.128, sub)
+        mt = la.microstrip_acoplada_kj(0.64, 0.128, Substrato(9.7, 0.64, 10, incluir_t=True))
+        self.assertLess(mt.zo, m0.zo)
+        self.assertGreater(m0.eeo - mt.eeo, m0.eee - mt.eee)              # ímpar cai mais (seção 4.5.1)
+        s = Substrato(3.55, 0.813, 35, 0.0)
+        f = np.array([5e9])
+        ae, ao = la.alfa_condutor_modos(1.8, 0.2, s, f)
+        self.assertGreater(ao[0], ae[0])                                  # αco > αce (Fig. 4.19)
+        ae, ao = la.alfa_condutor_modos(1.8, 5.0, s, f)
+        iso = ms.alfa_condutor(1.8, s, f)[0, 0]
+        self.assertAlmostEqual(ae[0] / iso, 1, delta=0.05)               # linhas afastadas: linha isolada
+        dle, dlo = la.ponta_aberta_acoplada(0.64, 6.4, sub)
+        from lta.core.descontinuidades import extensao_ponta_aberta
+        self.assertAlmostEqual(dle, extensao_ponta_aberta(0.64, sub), delta=1e-3)   # Δle → Δloc para S grande
+        self.assertAlmostEqual(dlo, dle, delta=1e-3)
+
+    def test_marchand(self):
+        from lta.core import balun
+        for zl in (50, 100, 200):
+            c, r = balun.acoplamento_otimo(2e9, 50, zl)
+            self.assertAlmostEqual(c, 1 / np.sqrt(1 + zl / 50), places=4)
+            self.assertLess(r, 1e-4)
+        p = balun.projeto(2e9, 50, 200)
+        m = balun.metricas(balun.s_marchand(np.array([2e9]), *p.secoes, 50, 200))
+        self.assertAlmostEqual(m[1][0], -3.01, delta=0.01)
+        self.assertAlmostEqual(m[2][0], -3.01, delta=0.01)
+        self.assertAlmostEqual(abs(m[4][0]), 180, delta=0.01)
+
+
+class GargBahlPratico(unittest.TestCase):
+    def test_conector_e_de_embedding(self):
+        from lta.core import conectores as co
+        t = co.PREDEFINIDOS["Típica, VSWR 1,10 em 10 GHz (Tabela 2.5)"]
+        s = abcd.abcd_para_s(co.abcd_transicao(np.array([10e9]), t), 50)
+        self.assertAlmostEqual(float(co.vswr(s[:, 0, 0])[0]), 1.10, places=6)
+        sub = Substrato(3.55, 0.813, 35, 0.0)
+        f = np.linspace(1e9, 10e9, 50)
+        tr = co.compensacao(t, sub)
+        s0 = abcd.abcd_para_s(co.dispositivo_de_teste(f, t, sub, 30), 50)
+        s1 = abcd.abcd_para_s(co.dispositivo_de_teste(f, t, sub, 30, comp_trecho=tr), 50)
+        self.assertLess(np.abs(s1[:, 0, 0]).max(), 0.5 * np.abs(s0[:, 0, 0]).max())
+        dut = co.abcd_linha_ms(f, sintese(70, sub), 20, sub)
+        w0 = sintese(50, sub)
+        med = abcd.cascata(co.abcd_transicao(f, t, True), co.abcd_linha_ms(f, w0, 5, sub), dut,
+                           co.abcd_linha_ms(f, w0, 5, sub), co.abcd_transicao(f, t, False))
+        np.testing.assert_allclose(co.de_embutir(f, abcd.abcd_para_s(med, 50), t, sub, 5.0),
+                                   abcd.abcd_para_s(dut, 50), atol=1e-9)
+
+    def test_caracterizacao(self):
+        from lta.core import caracterizacao as ca, conectores as co
+        sub = Substrato(3.55, 0.813)
+        w = sintese(50, sub)
+        z, ee = (float(x) for x in analise(w, sub))
+        f = np.linspace(0.1e9, 10e9, 200)
+        t = co.PREDEFINIDOS["Típica, VSWR 1,10 em 10 GHz (Tabela 2.5)"]
+        g = ca.duas_linhas(f, ca.sintetico(f, z, ee, 2.0, 30, t), ca.sintetico(f, z, ee, 2.0, 60, t), 30, 60)
+        np.testing.assert_allclose((g.imag * ms.C0 / (2 * np.pi * f)) ** 2, ee, rtol=1e-9)   # sem os conectores
+        np.testing.assert_allclose(g.real, 2.0, rtol=1e-9)
+        ln = ca.linha_de_s(f, ca.sintetico(f, z, ee, 2.0, 30), 30)
+        np.testing.assert_allclose(ln.zc.real, z, rtol=1e-9)
+        self.assertAlmostEqual(ca.er_de_eeff(ee, w, 0.813), 3.55, places=6)
+        ee2, le = ca.dois_ressonadores(*[ms.C0 / (2 * (l + 0.3) * 1e-3 * np.sqrt(ee)) for l in (20.0, 25.0)], 20, 25)
+        self.assertAlmostEqual(ee2, ee, places=9)
+        self.assertAlmostEqual(le, 0.3, places=9)
+        self.assertAlmostEqual(ca.z0_de_vswr(50, 1.5, 1.0), 50 * np.sqrt(1.5))
+
+    def test_robustez(self):
+        from lta.core import robustez as rb
+        al = Substrato(9.7, 0.635, 10, 2e-4, "Alumina", 4.1e7)
+        w = sintese(50, al)
+        p = rb.potencia(w, al, np.array([2e9, 10e9, 20e9]), 30.0, 100, 25, 4000)
+        np.testing.assert_allclose(p.p_media / np.array([12120, 5170, 3400]), 1, atol=0.3)   # Tabela 2.3
+        s = rb.sensibilidades(w, al)
+        self.assertAlmostEqual(s["W"][0], -s["h"][0], delta=0.01)       # Z0 depende de W/h
+        pc = rb.pior_caso(w, al, 0.0025, 0.025, 0.25)
+        self.assertGreater(pc.vswr, 1)
+        dw = rb.precisao_w(w, al, pc.dz_rel, 1.0, 0.025, 0.25)
+        self.assertAlmostEqual(dw, 0.0025, delta=1e-4)                   # eqs. 2.100-2.101 inversas de 2.97
+
+    def test_dgs(self):
+        from lta.core import dgs
+        L, C = dgs.lc_de_resposta(8e9, 3.5e9)
+        s = abcd.abcd_para_s(dgs.CelulaDGS(L, C).abcd(np.array([3.5e9])), 50)
+        self.assertAlmostEqual(abcd.db(s[0, 1, 0]), -3.0103, places=3)   # eq. 6.8: fc é o corte de 3 dB
+        el = dgs.passa_baixas(1.3e9, 50, 3, 0.01)
+        self.assertAlmostEqual(el[0][1] * 1e9, 3.678, delta=0.2)          # livro: Ld = 3,678 nH, Cs = 2,33 pF
+        self.assertAlmostEqual(el[1][1] * 1e12, 2.33, delta=0.06)
+        f = np.linspace(1e9, 12e9, 600)
+        ref = dgs.ModeloPi(2000, L, C, 5000, 0.05e-12, 0)
+        m = dgs.extrair_pi(f, abcd.abcd_para_s(dgs.abcd_pi(f, ref), 50))
+        for a, b in ((m.R, 2000), (m.L, L), (m.C, C), (m.Rp, 5000), (m.Cp, 0.05e-12)):
+            self.assertAlmostEqual(a / b, 1, places=4)
+
+    def test_layouts_novos(self):
+        from lta.geometria import circuitos as ci
+        sub = Substrato(3.55, 0.813)
+        lays = [ci.linha_dgs("dg", sub, 1.8, 3, 10, 5, 5, 0.5, 2.4, stubs=[(15, 6, 1.0)]),
+                ci.slotline("sl", sub, 0.3, 30),
+                ci.fixture_conector("fx", sub, 1.8, 30, (0.8, 0.3)),
+                ci.balun_marchand("bm", sub, 1.8, 1.2, 0.05, 23, 3.0, chanfro=True),
+                ci.wilkinson("wc", sub, 1.8, 1.0, 22, 1.0, 22, chanfro_f0=2e9),
+                ci.acoplador_linhas("ac", sub, [(20, 1.5, 0.15)], 1.8, chanfro=True)]
+        with tempfile.TemporaryDirectory() as d:
+            for lay in lays:
+                arqs = exportar(lay, d, list(FORMATOS), dict(f_min_ghz=1, f_max_ghz=5))
+                self.assertTrue(all(a.stat().st_size > 0 for a in arqs), lay.nome)
+                self._gds_ok((Path(d) / f"{lay.nome}.gds").read_bytes())
+        canto = ci.caminho([(0, 0), (10, 0), (10, 10)], 2.0, 60)
+        self.assertEqual(len(canto), 3)
+        self.assertEqual(len(canto[2]), 5)                                # canto com o chanfro (pentágono)
+
+    def _gds_ok(self, dados):
+        i = 0
+        while i < len(dados):
+            n = struct.unpack(">H", dados[i:i + 2])[0]
+            self.assertGreaterEqual(n, 4)
+            i += n
+        self.assertEqual(i, len(dados))
+
+
+class SteerSistemas(unittest.TestCase):
+    """M. Steer, Microwave and RF Design: A Systems Approach, SciTech, 2010."""
+
+    def test_trl_sintetico(self):
+        from lta.core import caracterizacao as ca
+        f = np.linspace(1e9, 8e9, 41)
+        rng = np.random.default_rng(1)
+
+        def caixa():
+            m = abcd.cascata(abcd.series(1j * 2 * np.pi * f * 0.3e-9), abcd.shunt(1j * 2 * np.pi * f * 0.15e-12),
+                             abcd.linha(50 + 5 * rng.random(), 2 * np.pi * f / 3e8 * 1.7 * 0.01 - 0.02j))
+            return m
+        xa, xb = caixa(), caixa()[:, ::-1, ::-1]                           # porta 2 espelhada
+        dl, ee = 10.0, 2.7
+        lin = abcd.linha(50, 2 * np.pi * f * np.sqrt(ee) / 3e8 * dl * 1e-3)
+        dut = abcd.cascata(abcd.linha(30, 2 * np.pi * f * np.sqrt(ee) / 3e8 * 8e-3), abcd.series(5.0 + 0 * f))
+        s = lambda m: abcd.abcd_para_s(m, 50)                              # noqa: E731
+        sa, sb = s(xa), s(xb)
+        for gr, aberto in ((1.0, True), (-1.0, False)):
+            g1 = sa[:, 0, 0] + sa[:, 0, 1] * sa[:, 1, 0] * gr / (1 - sa[:, 1, 1] * gr)
+            g2 = sb[:, 1, 1] + sb[:, 1, 0] * sb[:, 0, 1] * gr / (1 - sb[:, 0, 0] * gr)
+            r = ca.trl(f, s(xa @ xb), s(xa @ lin @ xb), g1, g2, s(xa @ dut @ xb), dl, ee, aberto)
+            np.testing.assert_allclose(r.s_dut, s(dut), atol=1e-9)
+            np.testing.assert_allclose(r.gama_r, gr, atol=1e-9)
+
+    def test_renormalizacao(self):
+        from lta.core import caracterizacao as ca
+        f = np.array([1e9, 2e9])
+        m = abcd.cascata(abcd.series(10 + 20j + 0 * f), abcd.shunt(0.01j + 0 * f))
+        s50 = abcd.abcd_para_s(m, 50)
+        np.testing.assert_allclose(ca.renormalizar(s50, 50, 75), abcd.abcd_para_s(m, 75), atol=1e-12)
+        np.testing.assert_allclose(ca.renormalizar(ca.renormalizar(s50, 50, [25, 100]), [25, 100], 50), s50,
+                                   atol=1e-12)
+
+    def test_estabilidade_phemt(self):
+        from lta.core import amplificador as am
+        f, s = am.s_de_tabela(am.PHEMT_STEER)
+        e = am.estabilidade(s)
+        self.assertAlmostEqual(e.k[0], 0.15178, places=4)                   # Tabela 11-6, 0,5 GHz
+        self.assertAlmostEqual(e.delta[0], 0.62757, places=4)
+        gtu = 10 * np.log10(am.ganhos(s)["GTU_max"])
+        np.testing.assert_allclose(gtu[:6], [36.62, 31.07, 24.88, 21.26, 18.73, 17.00], atol=0.01)  # Tab. 11-7
+        (cs_, rs), _ = am.circulos(s[:1])
+        self.assertAlmostEqual(abs(cs_[0] - (0.92820 + 0.50682j)), 0, places=4)
+        self.assertAlmostEqual(rs[0], 0.22434, places=4)
+        s8 = s[f == 8e9]
+        self.assertTrue(e.incondicional[f == 8e9][0])
+        gs, gl = am.conjugado_simultaneo(s8)
+        gin, gout = am.gamas_entrada_saida(s8, gs, gl)
+        np.testing.assert_allclose(gin, np.conj(gs), atol=1e-12)            # entrada e saída conjugadas
+        np.testing.assert_allclose(gout, np.conj(gl), atol=1e-12)
+        self.assertAlmostEqual(float(am.gt(s8, gs, gl)[0]), float(am.ganhos(s8)["GMA"][0]), places=9)
+
+    def test_combline_steer(self):
+        from lta.core import combline as cl
+        p = cl.projeto(1e9, 0.1, 3, ripple_eps=0.1, z_alvo=80)
+        # Steer, seção 10.14: C1 = 1,6515 pF, C2 = 2,7171 pF, Z1 = 67,7535 Ω, acoplamento 442,38 Ω, Cb = 1,22306 pF
+        for calc, livro in ((p.c[0] * 1e12, 1.6515), (p.c[1] * 1e12, 2.7171), (p.z_stub[0], 67.7535),
+                            (p.z_acop[0], 442.38), (p.cb * 1e12, 1.22306)):
+            self.assertAlmostEqual(calc / livro, 1, delta=0.01)
+        s21 = 20 * np.log10(np.abs(cl.s_combline(np.array([0.5e9, 1e9, 1.5e9, 3e9]), p)[:, 1, 0]))
+        self.assertGreater(s21[1], -0.01)
+        self.assertTrue(np.all(s21[[0, 2, 3]] < -50))
+
+    def test_rede_pi_ex87(self):
+        from lta.core import casamento as cs
+        sols = cs.rede_pi(500 + 0j, 50, 1e9, 10)
+        self.assertEqual(len(sols), 4)
+        self.assertAlmostEqual(sols[0].rv, 500 / 101, places=9)
+        for so in sols:
+            b1, x2, b3 = so.valores
+            self.assertAlmostEqual(1 / abs(b1), 16.58, delta=0.01)             # o livro imprime 16,4
+            self.assertAlmostEqual(1 / abs(b3), 50.0, places=6)
+            # o livro arredonda RV = 4,95 Ω (exato 4,9505): |X2| = 64,433 ou 34,567 com erro ~0,006
+            self.assertTrue(min(abs(abs(x2) - 64.433), abs(abs(x2) - 34.567)) < 0.01)
+            zin = cs.zin_abcd(so.abcd(np.array([1e9])), 500)
+            self.assertLess(abs(cs.gama(zin, 50))[0], 1e-12)
+        for so in cs.rede_t(20 - 35j, 50, 1e9, 4):
+            self.assertAlmostEqual(so.rv, 20 * 17, places=9)
+            zin = cs.zin_abcd(so.abcd(np.array([1e9])), 20 - 35j)
+            self.assertLess(abs(cs.gama(zin, 50))[0], 1e-12)
+        with self.assertRaises(ValueError):
+            cs.rede_pi(500 + 0j, 50, 1e9, 2.9)                             # Q < Q da rede L (3)
+
+    def test_hibridas_concentradas(self):
+        from lta.core import dispositivos as dv
+        f = np.array([1e9])
+        l35, (se, de) = dv.linha_concentrada(50 / np.sqrt(2), np.pi / 2, 1e9)
+        self.assertAlmostEqual(se[1], 50 / np.sqrt(2) / (2 * np.pi * 1e9), places=20)   # L = Z/ω0
+        s = dv.branch_line(f, l35, dv.linha_concentrada(50, np.pi / 2, 1e9)[0], 50)[0]
+        self.assertAlmostEqual(abs(s[1, 0]) ** 2, 0.5, places=12)
+        self.assertLess(abs(s[3, 0]), 1e-12)
+        z = 50 * np.sqrt(2)
+        l270, (se, de) = dv.linha_concentrada(z, 3 * np.pi / 2, 1e9)
+        self.assertEqual((se[0], de[0]), ("C", "L"))                       # 270° → -90° passa-altas
+        s = dv.rat_race(f, dv.linha_concentrada(z, np.pi / 2, 1e9)[0], l270, 50)[0]
+        self.assertAlmostEqual(abs(s[1, 0]) ** 2 + abs(s[2, 0]) ** 2, 1, places=12)
+
+    def test_acoplador_capacitores_pontas(self):
+        from lta.core import linhas_acopladas as la
+        f = np.array([2e9])
+        conv = la.projeto_acoplador(la.TIPOS[0], 50, 10, 2e9, RO3010)
+        pont = la.projeto_acoplador(la.TIPOS[0], 50, 10, 2e9, RO3010, pontas=True)
+        d_conv = la.metricas(la.acoplador(f, conv.secoes, 50))[1][0]
+        c, d, _, rl = (x[0] for x in la.metricas(la.acoplador(f, pont.secoes, 50)))
+        self.assertLess(d_conv, 20)
+        self.assertGreater(d, 60)
+        self.assertGreater(rl, 60)
+        self.assertAlmostEqual(c, 10, delta=0.05)
+        self.assertGreater(pont.secoes[0].c_pontas, 0)
+
+    def test_atenuadores(self):
+        from lta.core import passivos as pv
+        t = pv.projeto("T", 50, 50, 10)
+        np.testing.assert_allclose(t.r, (25.975, 25.975, 35.136), atol=1e-3)
+        pi = pv.projeto("Pi", 50, 50, 10)
+        np.testing.assert_allclose(pi.r, (96.248, 96.248, 71.151), atol=1e-3)
+        self.assertAlmostEqual(10 * np.log10(pv.k_minimo(50, 75)), 5.719, places=3)   # eq. 7.14
+        for top in pv.TOPOLOGIAS:
+            a = pv.projeto(top, 50, 75, 8)
+            s = a.s(np.array([1e9]))[0]
+            self.assertLess(abs(s[0, 0]), 1e-12)
+            self.assertLess(abs(s[1, 1]), 1e-12)
+            self.assertAlmostEqual(-20 * np.log10(abs(s[1, 0])), 8, places=9)
+            self.assertAlmostEqual(sum(a.potencias(1.0)), 1, places=12)
+        with self.assertRaises(ValueError):
+            pv.projeto("T", 50, 75, 5)
+
+    def test_marchand_miniaturizado(self):
+        from lta.core import balun
+        b = balun.projeto_miniaturizado(1e9, 50, 200, 45)
+        m = balun.metricas(balun.s_marchand(np.array([1e9]), *b.secoes, 50, 200, caps=b.caps))
+        self.assertLess(m[0][0], -60)
+        self.assertLess(abs(m[3][0]), 0.01)
+        self.assertAlmostEqual(abs(m[4][0]), 180, delta=0.1)
+        conv = balun._secoes_ideais(0.5, 50, 1e9)[0].comp
+        self.assertAlmostEqual(b.secoes[0].comp / conv, 0.5, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

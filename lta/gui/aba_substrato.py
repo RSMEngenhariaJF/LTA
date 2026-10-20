@@ -3,6 +3,7 @@ import numpy as np
 
 from ..core.microstrip import (NP_DB, Substrato, alfa_condutor, alfa_dieletrico, analise, dispersao,
                                profundidade_pelicular, sintese)
+from ..core.descontinuidades import extensao_ponta_aberta, pozar_analise, texto_limites
 from .comum import AbaBase, AreaTexto, Formulario, protegido
 
 # Valores nominais para referência rápida. Conferir sempre o datasheet do lote
@@ -31,6 +32,7 @@ class AbaSubstrato(AbaBase):
             ("tand", "tan δ", s.tand, ""),
             ("sigma", "Condutividade σ", s.sigma / 1e6, "MS/m"),
             ("rug_um", "Rugosidade (RMS)", s.rug_um, "µm"),
+            ("incluir_t", "Espessura t em Z0 e εeff (Garg-Bahl)", ("Não", "Sim"), ""),
         ], titulo="Substrato (usado por todas as abas)")
         self.form.pack(fill="x")
         self.form.ao_mudar("predef", self._carregar_predef)
@@ -43,7 +45,7 @@ class AbaSubstrato(AbaBase):
         ], titulo="Calculadora microstrip (Hammerstad-Jensen)")
         self.calc.pack(fill="x", pady=(10, 0))
         self.botoes(("Z0 → W", self.z_para_w), ("W → Z0", self.w_para_z))
-        self.saida = AreaTexto(self.painel, 8)
+        self.saida = AreaTexto(self.painel, 14)
         self.saida.pack(fill="both", expand=True)
         estado.ouvir(lambda ev: ev == "substrato" and self._sincronizar())
         self.aplicar()
@@ -53,7 +55,7 @@ class AbaSubstrato(AbaBase):
 
     def _preencher(self, s):
         self.form.set(dict(nome=s.nome, er=s.er, h_mm=s.h_mm, t_um=s.t_um, tand=s.tand,
-                           sigma=f"{s.sigma / 1e6:g}", rug_um=s.rug_um))
+                           sigma=f"{s.sigma / 1e6:g}", rug_um=s.rug_um, incluir_t="Sim" if s.incluir_t else "Não"))
 
     def _sincronizar(self):
         self._preencher(self.estado.substrato)
@@ -67,7 +69,7 @@ class AbaSubstrato(AbaBase):
         if v["sigma"] <= 0 or v["t_um"] <= 0 or v["tand"] < 0 or v["rug_um"] < 0:
             raise ValueError("σ e t devem ser positivos; tan δ e rugosidade, ≥ 0.")
         self.estado.definir_substrato(Substrato(v["er"], v["h_mm"], v["t_um"], v["tand"], v["nome"],
-                                                v["sigma"] * 1e6, v["rug_um"]))
+                                                v["sigma"] * 1e6, v["rug_um"], v["incluir_t"] == "Sim"))
         self.estado.msg(f"Substrato aplicado: {v['nome']} (εr={v['er']:g}, h={v['h_mm']:g} mm)")
 
     @protegido
@@ -98,13 +100,18 @@ class AbaSubstrato(AbaBase):
             f"W = {w:.4f} mm   (W/h = {w / sub.h_mm:.3f})\n"
             f"Z0 = {z0:.3f} Ω\nεeff = {ee:.4f}\n"
             f"λg a 1 GHz = {lg:.2f} mm\n"
-            "Modelo quase-estático, t = 0 (Hammerstad & Jensen, 1980).\n\n"
+            + ("Modelo quase-estático com espessura t (Hammerstad-Jensen + Bahl-Garg).\n\n" if sub.incluir_t
+               else "Modelo quase-estático, t = 0 (Hammerstad & Jensen, 1980).\n\n") +
             f"Em {f / 1e9:g} GHz:\n"
             f"  Dispersão (Kirschning-Jansen): εeff = {ee_f:.4f}, Z0 = {z_f:.2f} Ω\n"
             f"  Profundidade pelicular δ = {profundidade_pelicular(f, sub.sigma) * 1e6:.3f} µm\n"
             f"  Perda no condutor   αc = {ac:.4f} dB/cm (eq. 1.90 / Pucel)\n"
             f"  Perda no dielétrico αd = {ad:.4f} dB/cm (eq. 1.68)\n"
-            f"  Total = {ac + ad:.4f} dB/cm = {(ac + ad) * lg * 0.1 / (f / 1e9):.4f} dB/λg")
+            f"  Total = {ac + ad:.4f} dB/cm = {(ac + ad) * lg * 0.1 / (f / 1e9):.4f} dB/λg\n\n"
+            f"Ponta aberta: Δl = {extensao_ponta_aberta(w, sub):.4f} mm (Kirschning-Jansen)\n"
+            f"Pozar (eqs. 3.195-3.196): Z0 = {float(pozar_analise(w, sub)[0]):.2f} Ω, "
+            f"εe = {float(pozar_analise(w, sub)[1]):.4f}\n"
+            "Modos indesejados (Pozar, 3.6 e 3.8):\n" + "\n".join(texto_limites(sub, w, f)))
 
     def _plotar(self):
         s = self.estado.substrato
